@@ -1,16 +1,14 @@
-
-import reactLogo from "./assets/react.svg";
-
+import { BrowserRouter } from "react-router-dom";
+import Router from "./router";
 import "./App.css";
 
 function App() {
-  
-  
-
   return (
-    <main className="container">
-    <div>Manoj</div>
-    </main>
+    <BrowserRouter>
+      <main className="container">
+        <Router />
+      </main>
+    </BrowserRouter>
   );
 }
 

@@ -14,16 +14,7 @@
   margin: 0;
   padding: 0;
 }
-@keyframes shrinkBounce {
-  0%   { transform: scaleY(1) translateY(0); }
-  50%  { transform: scaleY(0.94) translateY(-6px); }
-  100% { transform: scaleY(1) translateY(0); }
-}
 
-.shrink-shake {
-  animation: shrinkBounce 1.4s ease-in-out infinite;
-  transform-origin: top center;   
-}
 
 html, body, #root {
   width: 100%;

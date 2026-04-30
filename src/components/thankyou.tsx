@@ -194,28 +194,12 @@ export default function ThankYouPage() {
           backdropFilter: "blur(12px)",
           display: "flex", alignItems: "center", gap: "8px",
         }}>
-          <div style={{
-            width: "7px", height: "7px", borderRadius: "50%",
-            background: "#F2CB07",
-            boxShadow: "0 0 8px rgba(242,203,7,0.8)",
-          }} />
-          <span style={{ color: "rgba(255,255,255,0.85)", fontSize: "13px", fontWeight: 600, letterSpacing: "0.3px" }}>
-            Your documents have been printed
-          </span>
+          
+        
         </div>
       </div>
 
-      {/* ── REDIRECTING HINT ── */}
-      <div style={{
-        position: "absolute", bottom: "36px",
-        color: "rgba(255,255,255,0.35)",
-        fontSize: "12px", fontWeight: 500,
-        animation: "riseUp 0.5s ease both",
-        animationDelay: "0.9s",
-        letterSpacing: "0.3px",
-      }}>
-        Returning to home…
-      </div>
+  
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap');

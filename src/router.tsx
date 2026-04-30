@@ -3,6 +3,7 @@ import Home from "./Home";
 import OTPPage from "./components/otp";
 import MetadataPage from "./components/metadata";
 import LoadingPage from "./components/loading";
+import ThankYouPage from "./components/thankyou";
 
 export default function Router() {
   return (
@@ -11,6 +12,7 @@ export default function Router() {
       <Route path="/otp" element={<OTPPage />} />
       <Route path="/files" element={<MetadataPage />} />
       <Route path="/print" element={<LoadingPage />} />
+      <Route path="/done" element={<ThankYouPage />} />
     </Routes>
   );
 }

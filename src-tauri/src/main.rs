@@ -13,7 +13,8 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             commands::otp::otp_commands::verify_otp_commands,
-            commands::prin_job::job_commands::download_pdf_url_commands
+            commands::pdf_job::job_commands::download_pdf_url_commands,
+            commands::print::print_commands::cmd_print_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri app");

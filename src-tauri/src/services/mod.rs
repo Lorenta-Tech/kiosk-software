@@ -1,2 +1,2 @@
-mod otp_services;
+mod otp;
 mod job_services;

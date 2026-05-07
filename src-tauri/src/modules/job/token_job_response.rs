@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use super::print_job::Print_Job;
+use super::print_job::PrintJob;
 
 #[derive(Debug ,  Serialize , Deserialize , Clone)]
 pub struct TokenJobResponse {
-    job : Print_Job
+    job : PrintJob
 }

@@ -180,7 +180,7 @@ export default function OTPPage() {
               margin: "0 auto 16px",
               fontSize: "28px",
             }}>
-              <img src="../../public/lorenta.png"/>
+              <img src="../lorenta.png"/>
             </div>
             <h1 style={{
               color: "white", fontSize: "clamp(20px,3vw,28px)",

@@ -7,14 +7,14 @@ pub async fn verify_otp(token: i32) -> Result<TokenJobResponse, String> {
 
     let url = format!("{}/print/jobs/token", base_url);
 
-    println!("📤 Sending POST to: {}", url);
-    println!("📤 Token Payload: {}", token);
+    println!("Sending POST to: {}", url);
+    println!("Token Payload: {}", token);
 
     let client = reqwest::Client::new();
 
     let response = client
         .post(&url)
-        .json(&json!({ "token": token })) // ✔ integer token in body
+        .json(&json!({ "token": token }))
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -22,8 +22,8 @@ pub async fn verify_otp(token: i32) -> Result<TokenJobResponse, String> {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
 
-    println!("📥 Status: {}", status);
-    println!("📥 Response Body: {}", body);
+    println!("Status: {}", status);
+    println!(" Response Body: {}", body);
 
     if !status.is_success() {
         return Err(format!("Invalid Token: {}", body));

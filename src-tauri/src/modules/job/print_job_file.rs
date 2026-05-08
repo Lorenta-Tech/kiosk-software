@@ -1,16 +1,16 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug , Deserialize , Serialize , Clone)]
+  use serde::Serialize;
+  use serde::Deserialize;
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PrintJobFile {
-    file_id : String,
-    file_name : String,
-    printing_mode : Option<String>,
-    printing_side : Option<String>,
-    page_range : Vec<String>,
-    page_layout : Option<i32>,
-    copies : Option<i32>,
-    number_of_pages : Option<i32>,
-    price : Option<f64>,
-    file_status : String,
-    dowload_url : Option<String>
+    pub file_id: String,
+    pub file_name: String,
+    pub printing_mode: Option<String>,
+    pub printing_side: Option<String>,
+    pub page_range: Vec<String>,
+    pub page_layout: Option<i32>,
+    pub copies: Option<i32>,
+    pub number_of_pages: Option<i32>,
+    pub price: Option<f64>,
+    pub file_status: String,
+    pub download_url: Option<String>,  // ← was dowload_url
 }

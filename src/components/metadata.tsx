@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useEffect } from "react";
+import { getJob } from "../store/jobStore";
 
 function useClock() {
   const [now, setNow] = useState(new Date());
@@ -104,8 +105,9 @@ export default function MetadataPage() {
   const now       = useClock();
 
   // Job already fetched by OTP page — just read it
-  const job   = (location.state as any)?.job;
-  const files = job?.files ?? [];
+  const job = getJob();
+const files = job?.files ?? [];
+
 
   const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
   const date = now.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });

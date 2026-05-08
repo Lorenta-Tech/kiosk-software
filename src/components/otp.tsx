@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { setJob } from "../store/jobStore";
 
 function useClock() {
   const [now, setNow] = useState(new Date());
@@ -25,27 +26,32 @@ export default function OTPPage() {
 
   const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
   const date = now.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
-const submitOTP = async () => {
+const submitOTP = useCallback(async () => {
   const otp = digits.join("");
-
   console.log("📤 FRONTEND OTP:", otp);
 
   try {
     const res = await invoke("verify_otp_commands", { otp });
+    console.log("✅ RAW RESPONSE:", JSON.stringify(res));
 
-    console.log("🟢 INVOKE SUCCESS:", res);
+    // Try all possible structures
+    const job = (res as any)?.data?.job 
+      || (res as any)?.job 
+      || (res as any)?.data 
+      || res;
 
+    console.log("✅ JOB:", JSON.stringify(job));
+
+    setJob(job);
     setSuccess(true);
+    setTimeout(() => navigate("/files"), 800);
 
-    setTimeout(() => {
-      console.log("🚀 NAVIGATING TO /files");
-      navigate("/files");
-    }, 800);
-
-  } catch (err) {
+  } catch (err: any) {
     console.log("🔴 INVOKE FAILED:", err);
+    setShake(true);
+    setTimeout(() => setShake(false), 500);
   }
-};
+}, [digits, navigate]);
   const handleKey = useCallback(
     (key: string) => {
       setPressedKey(key);
@@ -70,13 +76,7 @@ if (key === "✓") {
     return;
   }
 
-  setSuccess(true);
-
-  requestAnimationFrame(() => {
-    console.log("NAVIGATE TRIGGERED");
-    navigate("/files", { replace: true });
-  });
-submitOTP()
+  submitOTP(); // ✅ let submitOTP handle everything
   return;
 }
       if (activeIdx < 6) {

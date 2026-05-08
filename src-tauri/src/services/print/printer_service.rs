@@ -292,7 +292,7 @@ fn job_exists(job_id: u32) -> bool {
 
 fn delete_pdf(path: &str) {
     match fs::remove_file(path) {
-        Ok(_)  => println!("🗑️  PDF deleted: {}", path),
+        Ok(_)  => println!(" PDF deleted: {}", path),
         Err(e) => println!(" Could not delete PDF {}: {}", path, e),
     }
 }

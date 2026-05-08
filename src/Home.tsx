@@ -83,7 +83,7 @@ export default function Home() {
           }}
         >
           <img
-            src="../public/Lorenta-1.png"
+            src="../public/lorenta.png"
             alt="Lorenta"
             style={{ width: "100%", display: "block" }}
           />

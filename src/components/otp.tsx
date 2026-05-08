@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-
+import { invoke } from "@tauri-apps/api/core";
 function useClock() {
   const [now, setNow] = useState(new Date());
   useEffect(() => {
@@ -25,46 +25,59 @@ export default function OTPPage() {
   const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
   const date = now.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
 
-  const handleKey = useCallback(
-    (key: string) => {
-      setPressedKey(key);
-      setTimeout(() => setPressedKey(null), 150);
+ const handleKey = useCallback(
+  async (key: string) => {
+    setPressedKey(key);
+    setTimeout(() => setPressedKey(null), 150);
 
-      if (key === "⌫") {
-        setDigits((prev) => {
-          const next = [...prev];
-          const clearIdx = activeIdx > 0 && next[activeIdx] === "" ? activeIdx - 1 : activeIdx;
-          next[clearIdx] = "";
-          setActiveIdx(Math.max(0, clearIdx));
-          return next;
-        });
+    if (key === "⌫") {
+      setDigits((prev) => {
+        const next = [...prev];
+        const clearIdx = activeIdx > 0 && next[activeIdx] === "" ? activeIdx - 1 : activeIdx;
+        next[clearIdx] = "";
+        setActiveIdx(Math.max(0, clearIdx));
+        return next;
+      });
+      return;
+    }
+
+    if (key === "✓") {
+      const otp = digits.join("");
+
+      if (otp.length < 6) {
+        setShake(true);
+        setTimeout(() => setShake(false), 500);
         return;
       }
 
-      if (key === "✓") {
-        const filled = digits.filter((d) => d !== "").length;
-        if (filled < 6) {
-          setShake(true);
-          setTimeout(() => setShake(false), 500);
-        } else {
-          setSuccess(true);
-          setTimeout(() => navigate("/files"), 1800);
-        }
-        return;
-      }
+      try {
+        setSuccess(true);
 
-      if (activeIdx < 6) {
-        setDigits((prev) => {
-          const next = [...prev];
-          next[activeIdx] = key;
-          return next;
-        });
-        setActiveIdx((i) => Math.min(5, i + 1));
-      }
-    },
-    [activeIdx, digits, navigate]
-  );
+        const res = await invoke("verify_otp_commands", { otp });
+        console.log("Verified OTP:", res);
 
+        setTimeout(() => navigate("/files"), 1200);
+
+      } catch (e) {
+        console.error(e);
+        setSuccess(false);
+        setShake(true);
+        setTimeout(() => setShake(false), 500);
+      }
+      return;
+    }
+
+    if (activeIdx < 6) {
+      setDigits((prev) => {
+        const next = [...prev];
+        next[activeIdx] = key;
+        return next;
+      });
+      setActiveIdx((i) => Math.min(5, i + 1));
+    }
+  },
+  [activeIdx, digits, navigate]
+);
   // Physical keyboard support
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -167,7 +180,7 @@ export default function OTPPage() {
               margin: "0 auto 16px",
               fontSize: "28px",
             }}>
-              <img src="../../public/Lorenta-1.png"/>
+              <img src="../../public/lorenta.png"/>
             </div>
             <h1 style={{
               color: "white", fontSize: "clamp(20px,3vw,28px)",

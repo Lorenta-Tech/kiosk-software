@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";  // ← add this
+import { getJob } from "../store/jobStore";   
 
 // Phase 1: downloading (0–7s), Phase 2: printing (8–15s)
 const DOWNLOAD_SECONDS = 7;
@@ -34,7 +36,32 @@ export default function LoadingPage() {
   const partialFill = (progress % 20) / 20; // 0–1 within the current segment
 
   const messages = isPrinting ? PRINT_MESSAGES : DOWNLOAD_MESSAGES;
+useEffect(() => {
+  const job = getJob();
+  if (!job?.files?.length) return;
 
+  const downloadAll = async () => {
+    for (const file of job.files) {
+      if (!file.download_url || !file.file_name) continue;
+      try {
+        console.log(`⬇️ [DOWNLOAD STARTED] ${file.file_name}`);
+        console.log(`🔗 URL: ${file.download_url}`);
+        const path = await invoke("download_pdf_url_commands", {
+          url: file.download_url,
+          fileName: file.file_name,
+        });
+        console.log(`✅ [DOWNLOAD COMPLETE] ${file.file_name}`);
+        console.log(`📁 Saved to: ${path}`);
+      } catch (err) {
+        console.log(`🔴 [DOWNLOAD FAILED] ${file.file_name}`);
+        console.log(`❌ Error:`, err);
+      }
+    }
+    console.log("🎉 [ALL DOWNLOADS DONE]");
+  };
+
+  downloadAll();
+}, []);
   useEffect(() => {
     const interval = setInterval(() => {
       setElapsed((prev) => {

@@ -9,7 +9,8 @@ pub async fn print_pdf_command(
     copies:     u32,
     color_mode: String,
     duplex:     bool,
-    page_range: Option<String>,  
+    page_range: Option<String>,
+    session_id: String,           // ← add this
 ) -> Result<(), String> {
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -19,7 +20,8 @@ pub async fn print_pdf_command(
             copies,
             color_mode: &color_mode,
             duplex,
-            page_range: page_range.as_deref(),  
+            page_range: page_range.as_deref(),
+            session_id: &session_id,   // ← add this
         };
         printer_service::send_print_job(&app, &pdf_path, &meta)
     })

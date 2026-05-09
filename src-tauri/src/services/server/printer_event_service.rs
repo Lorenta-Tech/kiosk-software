@@ -1,12 +1,12 @@
 use serde_json::json;
 use reqwest::Client;
 
-pub async fn notify_printer_event(job_id: u32, event: &str) -> Result<(), String> {
+pub async fn notify_printer_event(job_id: u32, event: &str, session_id: &str) -> Result<(), String> {
     let base_url = std::env::var("API_BASE_URL")
         .map_err(|_| "API_BASE_URL not set".to_string())?;
 
-    let url = format!("{}/print/jobs/error", base_url);  
- 
+    let url = format!("{}/print/jobs/error", base_url);
+
     println!(" Notifying backend event: '{}' | job_id: {}", event, job_id);
 
     let error_code = match event {
@@ -25,20 +25,20 @@ pub async fn notify_printer_event(job_id: u32, event: &str) -> Result<(), String
     let response = client
         .post(&url)
         .json(&json!({
-            "error": error_code,   
+            "error":      error_code,
+            "session_id": session_id,  // ← added
         }))
         .send()
         .await
         .map_err(|e| format!("Failed to notify backend: {}", e))?;
 
-   
-
     let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    if !status.is_success(){
+    let body   = response.text().await.unwrap_or_default();
+
+    if !status.is_success() {
         println!("Backend error notify failed [{}]: {}", status, body);
-    }else {
-        println!("Backend nofifies successfully : {}" , body);
+    } else {
+        println!("Backend notified successfully: {}", body);
     }
 
     Ok(())

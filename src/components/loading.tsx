@@ -179,18 +179,20 @@ function AlertModal({ alert }: { alert: AlertInfo }) {
 function ErrorModal({
   error,
   onDismiss,
+  phase,
 }: {
   error: ErrorInfo;
   onDismiss: () => void;
+  phase: Phase;
 }) {
   const ext = error.fileName ? getExt(error.fileName) : "";
   const extStyle = EXT_COLOR[ext] || { bg: "#7E49F218", border: "#7E49F255", text: "#4a2a99" };
 
   let iconClass = "ti-plug-connected-x";
   const r = (error.reason || error.message).toLowerCase();
-  if (r.includes("paper") || r.includes("jam"))          iconClass = "ti-file-x";
-  else if (r.includes("ink") || r.includes("cartridge")) iconClass = "ti-droplet-off";
-  else if (r.includes("timeout"))                         iconClass = "ti-clock-x";
+  if (r.includes("paper") || r.includes("jam"))             iconClass = "ti-file-x";
+  else if (r.includes("ink") || r.includes("cartridge"))    iconClass = "ti-droplet-off";
+  else if (r.includes("timeout"))                           iconClass = "ti-clock-x";
   else if (r.includes("download") || r.includes("network")) iconClass = "ti-wifi-off";
 
   return (
@@ -312,7 +314,7 @@ function ErrorModal({
             borderRadius: "16px",
             padding: "14px 16px",
             textAlign: "left",
-            marginBottom: "20px",
+            marginBottom: phase !== "printing" ? "20px" : "0",
           }}
         >
           <div
@@ -340,28 +342,31 @@ function ErrorModal({
           </div>
         </div>
 
-        <button
-          onClick={onDismiss}
-          style={{
-            width: "100%",
-            padding: "14px",
-            background: "#7E49F2",
-            border: "none",
-            borderRadius: "14px",
-            color: "white",
-            fontWeight: 800,
-            fontSize: "15px",
-            cursor: "pointer",
-            fontFamily: "'Sora', sans-serif",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "8px",
-          }}
-        >
-          <i className="ti ti-refresh" style={{ fontSize: "17px" }} aria-hidden="true" />
-          Try Again
-        </button>
+        {/* Try Again button — hidden during printing phase */}
+        {phase !== "printing" && (
+          <button
+            onClick={onDismiss}
+            style={{
+              width: "100%",
+              padding: "14px",
+              background: "#7E49F2",
+              border: "none",
+              borderRadius: "14px",
+              color: "white",
+              fontWeight: 800,
+              fontSize: "15px",
+              cursor: "pointer",
+              fontFamily: "'Sora', sans-serif",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+            }}
+          >
+            <i className="ti ti-refresh" style={{ fontSize: "17px" }} aria-hidden="true" />
+            Try Again
+          </button>
+        )}
       </div>
     </div>
   );
@@ -422,7 +427,8 @@ function FileRow({
       <div style={{ position: "absolute", right: "-13px", top: "50%", transform: "translateY(-50%)", width: "26px", height: "26px", borderRadius: "50%", background: "#7E49F2", zIndex: 2, pointerEvents: "none" }} />
 
       <div style={{ background: "white", borderRadius: "18px", overflow: "hidden" }}>
-        <div style={{ padding: "14px 26px 11px", borderBottom: "1.5px dashed rgba(126,73,242,0.20)" }}>
+        {/* ── Top section — increased padding ── */}
+        <div style={{ padding: "20px 26px 16px", borderBottom: "1.5px dashed rgba(126,73,242,0.20)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div
               style={{
@@ -454,7 +460,8 @@ function FileRow({
           </div>
         </div>
 
-        <div style={{ padding: showPrintBar ? "8px 26px 6px" : "8px 26px 13px", display: "flex", gap: "14px", flexWrap: "wrap" }}>
+        {/* ── Meta row — increased padding ── */}
+        <div style={{ padding: showPrintBar ? "12px 26px 8px" : "12px 26px 18px", display: "flex", gap: "14px", flexWrap: "wrap" }}>
           {[
             { icon: "ti-file-text", val: `${pages} page${pages === 1 ? "" : "s"}` },
             { icon: "ti-copy", val: `${copies} cop${copies === 1 ? "y" : "ies"}` },
@@ -469,8 +476,9 @@ function FileRow({
           ))}
         </div>
 
+        {/* ── Print progress bar — increased padding ── */}
         {showPrintBar && (
-          <div style={{ padding: "0 26px 13px" }}>
+          <div style={{ padding: "0 26px 18px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px" }}>
               <span style={{ fontSize: "10px", color: "#bbb", fontWeight: 600 }}>Page progress</span>
               <span style={{ fontSize: "10px", color: "#b89300", fontWeight: 700 }}>
@@ -702,13 +710,16 @@ export default function LoadingPage() {
       print_status:    "pending",
     }))
   );
-  const [errorInfo, setErrorInfo]         = useState<ErrorInfo | null>(null);
-  const [printerAlert, setPrinterAlert]   = useState<AlertInfo | null>(null);
+  const [errorInfo, setErrorInfo]           = useState<ErrorInfo | null>(null);
+  const [printerAlert, setPrinterAlert]     = useState<AlertInfo | null>(null);
   const [overallMessage, setOverallMessage] = useState("Preparing your documents…");
 
   const progressRef      = useRef(fileProgress);
   progressRef.current    = fileProgress;
   const currentFileIdRef = useRef<string | null>(null);
+
+  // Timer ref for paper-empty 5-minute timeout
+  const paperEmptyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function updateFile(file_id: string, patch: Partial<FileProgress>) {
     setFileProgress((prev) =>
@@ -754,6 +765,7 @@ export default function LoadingPage() {
         colorMode: file.printing_mode === "color" ? "Color" : "Monochrome",
         duplex:    file.printing_side === "double_side",
         pageRange: file.page_range?.[0] ?? null,
+        sessionId: job?.session_id,  
       });
       updateFile(file.file_id, {
         print_status:  "done",
@@ -813,6 +825,7 @@ export default function LoadingPage() {
   useEffect(() => {
     const unlisten: (() => void)[] = [];
 
+    // ── Page progress ──────────────────────────────────────────────────────
     listen<{ current: number; total: number; pct: number }>(
       "printer:page_progress",
       ({ payload }) => {
@@ -828,28 +841,62 @@ export default function LoadingPage() {
       }
     ).then((fn) => unlisten.push(fn));
 
+    // ── Paper empty — with 5-minute escalation timer ───────────────────────
+    listen("printer:paper_empty", () => {
+      setPrinterAlert({
+        icon:    "ti-file-x",
+        title:   "Paper tray is empty",
+        message: "Please refill the paper tray to continue printing.",
+      });
+
+      // Clear any existing timer first
+      if (paperEmptyTimerRef.current) clearTimeout(paperEmptyTimerRef.current);
+
+      // After 5 minutes with no refill → escalate to timeout alert
+      paperEmptyTimerRef.current = setTimeout(() => {
+        setPrinterAlert({
+          icon:    "ti-clock-x",
+          title:   "Waiting too long",
+          message: "Paper tray has been empty for too long. Please contact staff.",
+        });
+        paperEmptyTimerRef.current = null;
+      }, 5 * 60 * 1000);
+    }).then((fn) => unlisten.push(fn));
+
+    // ── Other alert banners ────────────────────────────────────────────────
     const bannerEvents: [string, string, string, string][] = [
-      ["printer:paper_empty", "ti-file-x",        "Paper tray is empty",   "Please refill the paper tray to continue printing."],
-      ["printer:paper_jam",   "ti-alert-triangle", "Paper jam detected",    "Please clear the jam and printing will resume."],
-      ["printer:ink_empty",   "ti-droplet-off",    "Ink cartridge empty",   "Please replace the cartridge to continue."],
-      ["printer:ink_low",     "ti-droplet-half-2", "Ink level is low",      "Printing continues — please replace the cartridge soon."],
-    ];
-
-    const clearedEvents = ["printer:paper_refilled", "printer:jam_cleared", "printer:ink_replaced"];
-
-    const fatalEvents: [string, string][] = [
-      ["printer:disconnected", "Printer was disconnected. Please contact staff."],
-      ["printer:timeout",      "Print job timed out. Please contact staff."],
-      ["printer:failed",       "A printer error occurred. Please contact staff."],
+      ["printer:paper_jam",   "ti-alert-triangle", "Paper jam detected",  "Please clear the jam and printing will resume."],
+      ["printer:ink_empty",   "ti-droplet-off",    "Ink cartridge empty", "Please replace the cartridge to continue."],
+      ["printer:ink_low",     "ti-droplet-half-2", "Ink level is low",    "Printing continues — please replace the cartridge soon."],
     ];
 
     bannerEvents.forEach(([event, icon, title, message]) => {
       listen(event, () => setPrinterAlert({ icon, title, message })).then((fn) => unlisten.push(fn));
     });
 
+    // ── Cleared events — auto-dismiss alert, no button needed ─────────────
+    const clearedEvents = ["printer:paper_refilled", "printer:jam_cleared", "printer:ink_replaced"];
     clearedEvents.forEach((event) => {
-      listen(event, () => setPrinterAlert(null)).then((fn) => unlisten.push(fn));
+      listen(event, () => {
+        // Cancel paper-empty timeout if paper was refilled
+        if (paperEmptyTimerRef.current) {
+          clearTimeout(paperEmptyTimerRef.current);
+          paperEmptyTimerRef.current = null;
+        }
+        setPrinterAlert(null); // Auto-dismiss
+      }).then((fn) => unlisten.push(fn));
     });
+
+    // ── Print timeout — just dismiss the alert silently, job will continue ─
+    listen("printer:timeout", () => {
+      setPrinterAlert(null);
+    }).then((fn) => unlisten.push(fn));
+
+    // ── Fatal events — show error modal ───────────────────────────────────
+    const fatalEvents: [string, string][] = [
+      ["printer:disconnected", "Printer was disconnected. Please contact staff."],
+      ["printer:failed",       "A printer error occurred. Please contact staff."],
+    ];
 
     fatalEvents.forEach(([event, msg]) => {
       listen(event, () => {
@@ -858,10 +905,14 @@ export default function LoadingPage() {
       }).then((fn) => unlisten.push(fn));
     });
 
-    return () => unlisten.forEach((fn) => fn());
+    return () => {
+      unlisten.forEach((fn) => fn());
+      // Clean up paper-empty timer on unmount
+      if (paperEmptyTimerRef.current) clearTimeout(paperEmptyTimerRef.current);
+    };
   }, []);
 
-  // ── Progress calculation ──────────────────────────────────────────────────
+  // ── Progress calculation ───────────────────────────────────────────────────
   const downloadedCount = fileProgress.filter((fp) => fp.download_status === "done").length;
   const printedCount    = fileProgress.filter((fp) => fp.print_status === "done").length;
   const total           = fileProgress.length;
@@ -940,7 +991,6 @@ export default function LoadingPage() {
           flex: 1,
           overflowY: "auto",
           width: "100%",
-
           padding: "0 clamp(22px,4vw,48px) 12px",
           boxSizing: "border-box",
           display: "flex",
@@ -963,13 +1013,14 @@ export default function LoadingPage() {
         printingFile={printingFile}
       />
 
-      {/* ── Printer Alert Modal (centered) ── */}
+      {/* ── Printer Alert Modal ── */}
       {printerAlert && <AlertModal alert={printerAlert} />}
 
       {/* ── Error Modal ── */}
       {errorInfo && (
         <ErrorModal
           error={errorInfo}
+          phase={phase}
           onDismiss={() => {
             setErrorInfo(null);
             navigate(-1);

@@ -11,12 +11,9 @@ use tauri::{AppHandle, Emitter};
 use crate::services::server::printer_event_service::notify_printer_event;
 
 
-
-
-const MEDIA:            &str = "A4";
-const JOB_POLL_SECS:    u64 = 3;
-const JOB_TIMEOUT_SECS: u64 = 300;
-
+const MEDIA:                  &str = "A4";
+const JOB_POLL_SECS:          u64  = 3;
+const JOB_TIMEOUT_SECS:       u64  = 300;
 const STALL_POLLS_BEFORE_PROBE: u32 = 3;
 
 // ── Job metadata passed in from the command layer ────────────────────────────
@@ -27,13 +24,15 @@ pub struct PrintJobMeta<'a> {
     pub color_mode: &'a str,
     pub duplex:     bool,
     pub page_range: Option<&'a str>,  // e.g. "1-3" or None for all pages
+    pub session_id: &'a str,
 }
 
-
-fn notify(job_id: u32, event: &str) {
-    let event_owned = event.to_string();
+// ── Fire-and-forget backend notifier ─────────────────────────────────────────
+fn notify(job_id: u32, event: &str, session_id: &str) {
+    let event_owned   = event.to_string();
+    let session_owned = session_id.to_string();
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = notify_printer_event(job_id, &event_owned).await {
+        if let Err(e) = notify_printer_event(job_id, &event_owned, &session_owned).await {
             println!("  printer_event_service error: {}", e);
         }
     });
@@ -51,6 +50,7 @@ pub fn send_print_job(app: &AppHandle, pdf_path: &str, meta: &PrintJobMeta) -> R
     println!("   Color     : {}", meta.color_mode);
     println!("   Duplex    : {}", if meta.duplex { "Two-sided (long edge)" } else { "One-sided" });
     println!("   PageRange : {}", meta.page_range.unwrap_or("all"));
+    println!("   Session   : {}", meta.session_id);
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     println!("  Checking printer before job...");
@@ -73,7 +73,7 @@ pub fn send_print_job(app: &AppHandle, pdf_path: &str, meta: &PrintJobMeta) -> R
     let sides_str  = if meta.duplex { "two-sided-long-edge" } else { "one-sided" };
     let copies_str = meta.copies.to_string();
 
-    // ── Build CUPS options, conditionally adding page-ranges ─────────────────
+    // ── Build CUPS options ────────────────────────────────────────────────────
     let mut props: Vec<(&str, String)> = vec![
         ("copies",           copies_str.clone()),
         ("print-color-mode", meta.color_mode.to_string()),
@@ -100,7 +100,7 @@ pub fn send_print_job(app: &AppHandle, pdf_path: &str, meta: &PrintJobMeta) -> R
             println!("✅ Print job submitted — Job ID : {job_id}");
             println!("   Waiting for {} page(s) × {} cop(ies)…", meta.pages, meta.copies);
             let _ = app.emit("printer:started", job_id);
-            notify(job_id as u32, "started");
+            notify(job_id as u32, "started", meta.session_id);  // ← session_id
 
             let result = wait_for_job(app, job_id as u32, meta);
             delete_pdf(pdf_path);
@@ -109,7 +109,7 @@ pub fn send_print_job(app: &AppHandle, pdf_path: &str, meta: &PrintJobMeta) -> R
         Err(e) => {
             println!("❌ Failed to submit print job: {:?}", e);
             let _ = app.emit("printer:failed", format!("{:?}", e));
-            notify(0, "submit_failed");
+            notify(0, "submit_failed", meta.session_id);  // ← session_id
             delete_pdf(pdf_path);
             Err(format!("Failed to submit print job: {:?}", e))
         }
@@ -156,12 +156,25 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
     let started          = Instant::now();
     let mut last_pct: u8 = 0;
 
+    // ── Paused-elapsed tracking ───────────────────────────────────────────────
+    let mut paused_duration          = Duration::ZERO;
+    let mut pause_started: Option<Instant> = None;
+
+    macro_rules! active_elapsed {
+        () => {{
+            let paused_now = pause_started
+                .map(|p| p.elapsed())
+                .unwrap_or(Duration::ZERO);
+            started.elapsed().saturating_sub(paused_duration + paused_now)
+        }};
+    }
+
     loop {
-        // ── Timeout ───────────────────────────────────────────────────────────
-        if started.elapsed() > Duration::from_secs(JOB_TIMEOUT_SECS) {
+        // ── Timeout — only ticks while NOT paused ─────────────────────────────
+        if active_elapsed!() > Duration::from_secs(JOB_TIMEOUT_SECS) {
             println!("⏰ Print job timed out (job {})", job_id);
             let _ = app.emit("printer:timeout", ());
-            notify(job_id, "timeout");
+            notify(job_id, "timeout", meta.session_id);  // ← session_id
             return Err("Print job timed out. Please contact staff.".into());
         }
 
@@ -175,7 +188,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
                 "pct":     100u8,
             }));
             let _ = app.emit("printer:completed", job_id);
-            notify(job_id, "completed");
+            notify(job_id, "completed", meta.session_id);  // ← session_id
             return Ok(());
         }
 
@@ -183,7 +196,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
         if !is_usb_present() {
             println!("❌ Printer unplugged during job {}!", job_id);
             let _ = app.emit("printer:disconnected", ());
-            notify(job_id, "disconnected");
+            notify(job_id, "disconnected", meta.session_id);  // ← session_id
             return Err("Printer was disconnected. Please contact staff.".into());
         }
 
@@ -255,14 +268,30 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             || all_lower.contains("ink out")
             || all_lower.contains("cartridge empty");
 
-        ipp_alert_active = has_jam || has_paper_empty || has_ink_empty;
+        // ── Pause / resume timeout clock ──────────────────────────────────────
+        let is_blocked = has_jam || has_paper_empty || has_ink_empty;
+        match (is_blocked, pause_started) {
+            (true, None) => {
+                pause_started = Some(Instant::now());
+                println!("⏸️  Timeout clock paused (job {})", job_id);
+            }
+            (false, Some(p)) => {
+                paused_duration += p.elapsed();
+                pause_started = None;
+                println!("▶️  Timeout clock resumed (job {}) — total paused: {:?}",
+                    job_id, paused_duration);
+            }
+            _ => {}
+        }
+
+        ipp_alert_active = is_blocked;
 
         // ── Paper jam ─────────────────────────────────────────────────────────
         if has_jam {
             if !notified_paper_jam {
                 println!("🚨 Paper jam detected (job {})", job_id);
                 let _ = app.emit("printer:paper_jam", ());
-                notify(job_id, "paper_jam");
+                notify(job_id, "paper_jam", meta.session_id);  // ← session_id
                 notified_paper_jam = true;
             }
             std::thread::sleep(Duration::from_secs(JOB_POLL_SECS));
@@ -272,7 +301,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             if should_stall_probe {
                 println!("✅ Paper jam cleared (job {})", job_id);
                 let _ = app.emit("printer:jam_cleared", ());
-                notify(job_id, "jam_cleared");
+                notify(job_id, "jam_cleared", meta.session_id);  // ← session_id
                 notified_paper_jam = false;
                 stall_polls = 0;
             } else {
@@ -286,7 +315,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             if !notified_paper_empty {
                 println!("📭 Paper tray empty (job {})", job_id);
                 let _ = app.emit("printer:paper_empty", ());
-                notify(job_id, "paper_empty");
+                notify(job_id, "paper_empty", meta.session_id);  // ← session_id
                 notified_paper_empty = true;
             }
             std::thread::sleep(Duration::from_secs(JOB_POLL_SECS));
@@ -296,7 +325,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             if should_stall_probe {
                 println!("✅ Paper refilled — resuming (job {})", job_id);
                 let _ = app.emit("printer:paper_refilled", ());
-                notify(job_id, "paper_refilled");
+                notify(job_id, "paper_refilled", meta.session_id);  // ← session_id
                 notified_paper_empty = false;
                 stall_polls = 0;
             } else {
@@ -310,7 +339,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             if !notified_ink_empty {
                 println!("🖊️  Ink empty (job {})", job_id);
                 let _ = app.emit("printer:ink_empty", ());
-                notify(job_id, "ink_empty");
+                notify(job_id, "ink_empty", meta.session_id);  // ← session_id
                 notified_ink_empty = true;
             }
             std::thread::sleep(Duration::from_secs(JOB_POLL_SECS));
@@ -320,7 +349,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             if should_stall_probe {
                 println!("✅ Ink replaced — resuming (job {})", job_id);
                 let _ = app.emit("printer:ink_replaced", ());
-                notify(job_id, "ink_replaced");
+                notify(job_id, "ink_replaced", meta.session_id);  // ← session_id
                 notified_ink_empty = false;
                 stall_polls = 0;
             } else {
@@ -339,15 +368,15 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             if has_ink_low {
                 println!("⚠️  Ink low — printing continues (job {})", job_id);
                 let _ = app.emit("printer:ink_low", ());
-                notify(job_id, "ink_low");
+                notify(job_id, "ink_low", meta.session_id);  // ← session_id
                 notified_ink_low = true;
             }
         }
 
-        // ── Progress estimate ─────────────────────────────────────────────────
-        let elapsed  = started.elapsed().as_secs();
-        let raw_pct  = ((elapsed * 100) / expected_secs).min(99) as u8;
-        let pct: u8  = if raw_pct >= 90 {
+        // ── Progress estimate (uses active elapsed, not wall clock) ───────────
+        let elapsed = active_elapsed!().as_secs();
+        let raw_pct = ((elapsed * 100) / expected_secs).min(99) as u8;
+        let pct: u8 = if raw_pct >= 90 {
             90 + ((raw_pct - 90) / 3).min(3)
         } else {
             raw_pct
@@ -357,7 +386,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
         if pct > last_pct {
             last_pct = pct;
             let est_current = ((pct as u32 * total_impressions) / 100).min(total_impressions);
-            println!("🖨️  job {} | {}% | ~{}/{} page(s) | elapsed {}s / ~{}s",
+            println!("🖨️  job {} | {}% | ~{}/{} page(s) | active {}s / ~{}s",
                 job_id, pct, est_current, total_impressions, elapsed, expected_secs);
             let _ = app.emit("printer:page_progress", serde_json::json!({
                 "current": est_current,
@@ -365,7 +394,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
                 "pct":     pct,
             }));
         } else {
-            println!("🖨️  job {} | {}% | elapsed {}s / ~{}s", job_id, pct, elapsed, expected_secs);
+            println!("🖨️  job {} | {}% | active {}s / ~{}s", job_id, pct, elapsed, expected_secs);
         }
 
         std::thread::sleep(Duration::from_secs(JOB_POLL_SECS));

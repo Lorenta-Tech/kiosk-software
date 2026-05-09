@@ -12,83 +12,87 @@ function useClock() {
   return now;
 }
 
-const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "✓"];
+// No ✓ key — auto-submits on 6th digit. Empty string = invisible spacer.
+const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", ""];
 
 export default function OTPPage() {
-  const [digits, setDigits] = useState<string[]>(Array(6).fill(""));
-  const [activeIdx, setActiveIdx] = useState(0);
+  const [digits, setDigits]         = useState<string[]>(Array(6).fill(""));
+  const [activeIdx, setActiveIdx]   = useState(0);
   const [pressedKey, setPressedKey] = useState<string | null>(null);
-  const [shake, setShake] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const now = useClock();
-  const navigate = useNavigate();
-  const digitRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [shake, setShake]           = useState(false);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState<string | null>(null);
+  const now                         = useClock();
+  const navigate                    = useNavigate();
+  const digitRefs                   = useRef<(HTMLDivElement | null)[]>([]);
 
   const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
   const date = now.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
-const submitOTP = useCallback(async () => {
-  const otp = digits.join("");
-  console.log("📤 FRONTEND OTP:", otp);
 
-  try {
-    const res = await invoke("verify_otp_commands", { otp });
-    console.log("✅ RAW RESPONSE:", JSON.stringify(res));
+  const submitOTP = useCallback(async (currentDigits: string[]) => {
+    const otp = currentDigits.join("");
+    setLoading(true);
+    setError(null);
 
-    // Try all possible structures
-    const job = (res as any)?.data?.job 
-      || (res as any)?.job 
-      || (res as any)?.data 
-      || res;
+    try {
+      const res = await invoke("verify_otp_commands", { otp });
 
-    console.log("✅ JOB:", JSON.stringify(job));
+      const job =
+        (res as any)?.data?.job ||
+        (res as any)?.job ||
+        (res as any)?.data ||
+        res;
 
-    setJob(job);
-    setSuccess(true);
-    setTimeout(() => navigate("/files"), 800);
+      setJob(job);
+      navigate("/files");
+    } catch (err: any) {
+      setLoading(false);
+      setError("Invalid PIN. Please try again.");
+      setShake(true);
+      setTimeout(() => {
+        setShake(false);
+        setError(null);
+        setDigits(Array(6).fill(""));
+        setActiveIdx(0);
+      }, 700);
+    }
+  }, [navigate]);
 
-  } catch (err: any) {
-    console.log("🔴 INVOKE FAILED:", err);
-    setShake(true);
-    setTimeout(() => setShake(false), 500);
-  }
-}, [digits, navigate]);
   const handleKey = useCallback(
     (key: string) => {
+      if (loading || key === "") return;
+
       setPressedKey(key);
-      setTimeout(() => setPressedKey(null), 150);
+      setTimeout(() => setPressedKey(null), 130);
 
       if (key === "⌫") {
+        setError(null);
         setDigits((prev) => {
           const next = [...prev];
-          const clearIdx = activeIdx > 0 && next[activeIdx] === "" ? activeIdx - 1 : activeIdx;
+          const clearIdx =
+            activeIdx > 0 && next[activeIdx] === "" ? activeIdx - 1 : activeIdx;
           next[clearIdx] = "";
           setActiveIdx(Math.max(0, clearIdx));
           return next;
         });
         return;
       }
-if (key === "✓") {
-  const filled = digits.filter((d) => d !== "").length;
 
-  if (filled < 6) {
-    setShake(true);
-    setTimeout(() => setShake(false), 500);
-    return;
-  }
-
-  submitOTP(); // ✅ let submitOTP handle everything
-  return;
-}
+      // Number key
       if (activeIdx < 6) {
         setDigits((prev) => {
           const next = [...prev];
           next[activeIdx] = key;
+          // Auto-submit when last digit entered
+          if (activeIdx === 5) {
+            setTimeout(() => submitOTP(next), 80);
+          }
           return next;
         });
         setActiveIdx((i) => Math.min(5, i + 1));
       }
     },
-    [activeIdx, digits, navigate]
+    [activeIdx, loading, submitOTP]
   );
 
   // Physical keyboard support
@@ -96,7 +100,6 @@ if (key === "✓") {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key >= "0" && e.key <= "9") handleKey(e.key);
       else if (e.key === "Backspace") handleKey("⌫");
-      else if (e.key === "Enter") handleKey("✓");
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -144,6 +147,7 @@ if (key === "✓") {
             padding: "8px 20px", cursor: "pointer",
             backdropFilter: "blur(8px)",
             transition: "background 0.2s",
+            fontFamily: "'Sora', sans-serif",
           }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.25)")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.15)")}
@@ -188,12 +192,11 @@ if (key === "✓") {
           <div style={{ textAlign: "center" }}>
             <div style={{
               width: "64px", height: "64px", borderRadius: "20px",
-            
               display: "flex", alignItems: "center", justifyContent: "center",
               margin: "0 auto 16px",
               fontSize: "28px",
             }}>
-              <img src="../../public/lorenta.png"/>
+              <img src="../../public/lorenta.png" alt="logo" />
             </div>
             <h1 style={{
               color: "white", fontSize: "clamp(20px,3vw,28px)",
@@ -215,13 +218,13 @@ if (key === "✓") {
             animation: shake ? "shake 0.5s ease" : "none",
           }}>
             {digits.map((d, i) => {
-              const isFocused = i === activeIdx;
-              const isFilled = d !== "";
+              const isFocused = i === activeIdx && !loading;
+              const isFilled  = d !== "";
               return (
                 <div
                   key={i}
                   ref={(el) => { digitRefs.current[i] = el; }}
-                  onClick={() => setActiveIdx(i)}
+                  onClick={() => !loading && setActiveIdx(i)}
                   style={{
                     width: "clamp(44px,7vw,60px)",
                     height: "clamp(54px,8vw,70px)",
@@ -229,7 +232,9 @@ if (key === "✓") {
                     background: isFilled
                       ? "rgba(255,255,255,0.95)"
                       : "rgba(255,255,255,0.12)",
-                    border: isFocused
+                    border: shake && isFilled
+                      ? "2px solid rgba(255,100,100,0.8)"
+                      : isFocused
                       ? "2.5px solid white"
                       : "2px solid rgba(255,255,255,0.25)",
                     display: "flex",
@@ -238,13 +243,13 @@ if (key === "✓") {
                     fontSize: "clamp(20px,3vw,28px)",
                     fontWeight: 800,
                     color: isFilled ? "#7E49F2" : "transparent",
-                    cursor: "pointer",
+                    cursor: loading ? "default" : "pointer",
                     transition: "all 0.18s ease",
                     boxShadow: isFocused
                       ? "0 0 0 4px rgba(255,255,255,0.2), 0 8px 20px rgba(0,0,0,0.15)"
                       : "0 4px 12px rgba(0,0,0,0.12)",
                     transform: isFocused ? "translateY(-3px) scale(1.06)" : "scale(1)",
-                    position: "relative",
+                    opacity: loading ? 0.6 : 1,
                   }}
                 >
                   {isFilled ? "●" : (
@@ -260,6 +265,19 @@ if (key === "✓") {
                 </div>
               );
             })}
+          </div>
+
+          {/* Error / verifying status */}
+          <div style={{ height: "18px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {error ? (
+              <p style={{ color: "#ffaaaa", fontSize: "13px", fontWeight: 600, margin: 0, animation: "fadeIn 0.2s ease" }}>
+                {error}
+              </p>
+            ) : loading ? (
+              <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "13px", fontWeight: 500, margin: 0 }}>
+                Verifying…
+              </p>
+            ) : null}
           </div>
 
           {/* Progress dots */}
@@ -284,53 +302,43 @@ if (key === "✓") {
           width: "100%",
           maxWidth: "380px",
         }}>
-          {KEYS.map((key) => {
-            const isDelete = key === "⌫";
-            const isConfirm = key === "✓";
+          {KEYS.map((key, idx) => {
+            const isDelete  = key === "⌫";
+            const isBlank   = key === "";
             const isPressed = pressedKey === key;
-            const isConfirmActive = isConfirm && filledCount === 6;
+
+            // Bottom-right spacer — invisible, keeps grid alignment
+            if (isBlank) return <div key={idx} />;
 
             return (
               <button
                 key={key}
                 onClick={() => handleKey(key)}
+                disabled={loading}
                 style={{
                   height: "clamp(58px,8vh,72px)",
                   borderRadius: "18px",
-                  border: isConfirm
-                    ? isConfirmActive
-                      ? "2.5px solid rgba(255,255,255,0.9)"
-                      : "2px solid rgba(255,255,255,0.2)"
-                    : isDelete
+                  border: isDelete
                     ? "2px solid rgba(255,255,255,0.2)"
                     : "2px solid rgba(255,255,255,0.18)",
-                  background: isConfirm
-                    ? isConfirmActive
-                      ? "white"
-                      : "rgba(255,255,255,0.10)"
-                    : isDelete
+                  background: isDelete
                     ? "rgba(255,100,100,0.20)"
                     : isPressed
                     ? "rgba(255,255,255,0.30)"
                     : "rgba(255,255,255,0.14)",
-                  color: isConfirm
-                    ? isConfirmActive ? "#7E49F2" : "rgba(255,255,255,0.35)"
-                    : isDelete
-                    ? "#ff8888"
-                    : "white",
-                  fontSize: isDelete || isConfirm ? "22px" : "clamp(20px,2.5vw,26px)",
-                  fontWeight: isDelete || isConfirm ? 600 : 700,
-                  cursor: "pointer",
+                  color: isDelete ? "#ff8888" : "white",
+                  fontSize: isDelete ? "22px" : "clamp(20px,2.5vw,26px)",
+                  fontWeight: isDelete ? 600 : 700,
+                  cursor: loading ? "default" : "pointer",
                   transform: isPressed ? "scale(0.93)" : "scale(1)",
                   transition: "all 0.13s ease",
                   boxShadow: isPressed
                     ? "inset 0 2px 6px rgba(0,0,0,0.18)"
-                    : isConfirmActive
-                    ? "0 6px 20px rgba(255,255,255,0.25)"
                     : "0 4px 12px rgba(0,0,0,0.12)",
                   backdropFilter: "blur(8px)",
                   fontFamily: "'Sora', sans-serif",
-                  letterSpacing: isDelete || isConfirm ? "0" : "0.5px",
+                  letterSpacing: isDelete ? "0" : "0.5px",
+                  opacity: loading ? 0.5 : 1,
                 }}
               >
                 {key}
@@ -339,36 +347,6 @@ if (key === "✓") {
           })}
         </div>
       </div>
-
-      {/* SUCCESS OVERLAY */}
-      {success && (
-        <div style={{
-          position: "fixed", inset: 0,
-          background: "rgba(126,73,242,0.92)",
-          backdropFilter: "blur(16px)",
-          display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center",
-          gap: "20px", zIndex: 100,
-          animation: "fadeIn 0.3s ease",
-        }}>
-          <div style={{
-            width: "100px", height: "100px", borderRadius: "50%",
-            background: "white",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: "48px",
-            boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
-            animation: "popIn 0.4s cubic-bezier(0.175,0.885,0.32,1.275)",
-          }}>
-            ✓
-          </div>
-          <div style={{ color: "white", fontSize: "24px", fontWeight: 700 }}>
-            Access Granted!
-          </div>
-          <div style={{ color: "rgba(255,255,255,0.7)", fontSize: "15px" }}>
-            Redirecting…
-          </div>
-        </div>
-      )}
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap');
@@ -386,12 +364,8 @@ if (key === "✓") {
           90% { transform: translateX(3px); }
         }
         @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes popIn {
-          from { transform: scale(0.5); opacity: 0; }
-          to { transform: scale(1); opacity: 1; }
+          from { opacity: 0; transform: translateY(-4px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </div>

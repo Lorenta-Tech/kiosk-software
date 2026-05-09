@@ -13,7 +13,7 @@ function useClock() {
 }
 
 // No ✓ key — auto-submits on 6th digit. Empty string = invisible spacer.
-const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", ""];
+const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9","","0", "⌫"];
 
 export default function OTPPage() {
   const [digits, setDigits]         = useState<string[]>(Array(6).fill(""));
@@ -141,16 +141,17 @@ export default function OTPPage() {
         <button
           onClick={() => navigate("/")}
           style={{
-            background: "rgba(255,255,255,0.15)",
+            background: "#ffffff",
             border: "none", borderRadius: "12px",
-            color: "white", fontSize: "15px", fontWeight: 600,
-            padding: "8px 20px", cursor: "pointer",
+            color: "#7E49F2", fontSize: "15px", fontWeight: 600,
+            padding: "15px 38px", cursor: "pointer",
             backdropFilter: "blur(8px)",
             transition: "background 0.2s",
             fontFamily: "'Sora', sans-serif",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.25)")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.15)")}
+             onMouseEnter={(e) => (e.currentTarget.style.background = "#ffffff")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#ffffff")}
+       
         >
           ← Back
         </button>
@@ -228,7 +229,7 @@ export default function OTPPage() {
                   style={{
                     width: "clamp(44px,7vw,60px)",
                     height: "clamp(54px,8vw,70px)",
-                    borderRadius: "16px",
+                    borderRadius: "50%",
                     background: isFilled
                       ? "rgba(255,255,255,0.95)"
                       : "rgba(255,255,255,0.12)",
@@ -255,7 +256,7 @@ export default function OTPPage() {
                   {isFilled ? "●" : (
                     isFocused && (
                       <div style={{
-                        width: "2px", height: "28px",
+                        width: "1px", height: "28px",
                         background: "rgba(255,255,255,0.7)",
                         borderRadius: "2px",
                         animation: "blink 1s ease-in-out infinite",
@@ -303,8 +304,9 @@ export default function OTPPage() {
           maxWidth: "380px",
         }}>
           {KEYS.map((key, idx) => {
-            const isDelete  = key === "⌫";
+    
             const isBlank   = key === "";
+            const isDelete  = key === "⌫";
             const isPressed = pressedKey === key;
 
             // Bottom-right spacer — invisible, keeps grid alignment
@@ -317,16 +319,16 @@ export default function OTPPage() {
                 disabled={loading}
                 style={{
                   height: "clamp(58px,8vh,72px)",
-                  borderRadius: "18px",
+                  borderRadius: "28px",
                   border: isDelete
                     ? "2px solid rgba(255,255,255,0.2)"
                     : "2px solid rgba(255,255,255,0.18)",
                   background: isDelete
-                    ? "rgba(255,100,100,0.20)"
+                    ? "#ffffff"
                     : isPressed
                     ? "rgba(255,255,255,0.30)"
                     : "rgba(255,255,255,0.14)",
-                  color: isDelete ? "#ff8888" : "white",
+                  color: isDelete ? "#7E49F2" : "white",
                   fontSize: isDelete ? "22px" : "clamp(20px,2.5vw,26px)",
                   fontWeight: isDelete ? 600 : 700,
                   cursor: loading ? "default" : "pointer",

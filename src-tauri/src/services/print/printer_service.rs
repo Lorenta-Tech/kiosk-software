@@ -8,35 +8,49 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter};
 
+use crate::services::server::printer_event_service::notify_printer_event;
+
+
+
 
 const MEDIA:            &str = "A4";
 const JOB_POLL_SECS:    u64 = 3;
 const JOB_TIMEOUT_SECS: u64 = 300;
 
-// How many consecutive polls with the job stuck (idle printer, job still queued)
-// before we actively probe for a hardware reason.
-const STALL_POLLS_BEFORE_PROBE: u32 = 3; // 3 × 3 s = ~9 s
+const STALL_POLLS_BEFORE_PROBE: u32 = 3;
 
 // ── Job metadata passed in from the command layer ────────────────────────────
 pub struct PrintJobMeta<'a> {
     pub file_name:  &'a str,
     pub pages:      u32,
     pub copies:     u32,
-    pub color_mode: &'a str,   // "Monochrome" | "Color"
+    pub color_mode: &'a str,
     pub duplex:     bool,
+    pub page_range: Option<&'a str>,  // e.g. "1-3" or None for all pages
+}
+
+
+fn notify(job_id: u32, event: &str) {
+    let event_owned = event.to_string();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = notify_printer_event(job_id, &event_owned).await {
+            println!("  printer_event_service error: {}", e);
+        }
+    });
 }
 
 
 pub fn send_print_job(app: &AppHandle, pdf_path: &str, meta: &PrintJobMeta) -> Result<(), String> {
 
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!("📄 PRINT JOB RECEIVED");
+    println!(" PRINT JOB RECEIVED");
     println!("   File      : {}", meta.file_name);
     println!("   Path      : {}", pdf_path);
     println!("   Pages     : {}", meta.pages);
     println!("   Copies    : {}", meta.copies);
     println!("   Color     : {}", meta.color_mode);
     println!("   Duplex    : {}", if meta.duplex { "Two-sided (long edge)" } else { "One-sided" });
+    println!("   PageRange : {}", meta.page_range.unwrap_or("all"));
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     println!("  Checking printer before job...");
@@ -51,7 +65,7 @@ pub fn send_print_job(app: &AppHandle, pdf_path: &str, meta: &PrintJobMeta) -> R
             format!("Canon printer not found. Available: {:?}", names)
         })?;
 
-    println!("🖨️  Using printer : {}", printer.name);
+    println!(" Using printer : {}", printer.name);
 
     let data = fs::read(pdf_path)
         .map_err(|e| format!("Failed to read PDF: {}", e))?;
@@ -59,15 +73,25 @@ pub fn send_print_job(app: &AppHandle, pdf_path: &str, meta: &PrintJobMeta) -> R
     let sides_str  = if meta.duplex { "two-sided-long-edge" } else { "one-sided" };
     let copies_str = meta.copies.to_string();
 
+    // ── Build CUPS options, conditionally adding page-ranges ─────────────────
+    let mut props: Vec<(&str, String)> = vec![
+        ("copies",           copies_str.clone()),
+        ("print-color-mode", meta.color_mode.to_string()),
+        ("sides",            sides_str.to_string()),
+        ("media",            MEDIA.to_string()),
+        ("collate",          "true".to_string()),
+    ];
+
+    if let Some(range) = meta.page_range {
+        println!("   Applying page-ranges: {}", range);
+        props.push(("page-ranges", range.to_string()));
+    }
+
+    let props_ref: Vec<(&str, &str)> = props.iter().map(|(k, v)| (*k, v.as_str())).collect();
+
     let options = PrinterJobOptions {
         name: Some("Kiosk Print"),
-        raw_properties: &[
-            ("copies",           &copies_str),
-            ("print-color-mode", meta.color_mode),
-            ("sides",            sides_str),
-            ("media",            MEDIA),
-            ("collate",          "true"),
-        ],
+        raw_properties: &props_ref,
         converter: Converter::None,
     };
 
@@ -76,6 +100,7 @@ pub fn send_print_job(app: &AppHandle, pdf_path: &str, meta: &PrintJobMeta) -> R
             println!("✅ Print job submitted — Job ID : {job_id}");
             println!("   Waiting for {} page(s) × {} cop(ies)…", meta.pages, meta.copies);
             let _ = app.emit("printer:started", job_id);
+            notify(job_id as u32, "started");
 
             let result = wait_for_job(app, job_id as u32, meta);
             delete_pdf(pdf_path);
@@ -84,6 +109,7 @@ pub fn send_print_job(app: &AppHandle, pdf_path: &str, meta: &PrintJobMeta) -> R
         Err(e) => {
             println!("❌ Failed to submit print job: {:?}", e);
             let _ = app.emit("printer:failed", format!("{:?}", e));
+            notify(0, "submit_failed");
             delete_pdf(pdf_path);
             Err(format!("Failed to submit print job: {:?}", e))
         }
@@ -96,7 +122,6 @@ pub fn check_printer_ready() -> Result<(), String> {
     }
     let status = get_printer_status()?;
 
-    // ── DEBUG: dump full lpstat output so we can see exact Canon alert tokens ──
     println!("── lpstat -p -l output ─────────────────────────");
     for line in status.lines() {
         println!("  | {}", line);
@@ -106,7 +131,7 @@ pub fn check_printer_ready() -> Result<(), String> {
     if let Some(msg) = blocking_error_message(&status) {
         return Err(msg);
     }
-    println!("✅ Printer ready");
+    println!("Printer ready");
     Ok(())
 }
 
@@ -115,26 +140,15 @@ pub fn is_printer_ready() -> bool {
 }
 
 
-
 fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(), String> {
     let mut notified_paper_empty = false;
     let mut notified_paper_jam   = false;
     let mut notified_ink_empty   = false;
     let mut notified_ink_low     = false;
 
-    // ── Stall detection ───────────────────────────────────────────────────────
-    // Canon GX6100 reports hardware errors (paper empty, jam, ink) via IPP
-    // printer-state-reasons but NOT in lpstat -p -l Alerts text.
-    // Strategy:
-    //   • Count polls where job exists but printer is "idle" or "processing"
-    //     with zero alert tokens from lpstat → stall detected.
-    //   • Once stall threshold reached, call probe_ipp_state() every poll.
-    //   • Once a hw-alert is active (notified_*), keep probing every poll
-    //     to detect when it clears — never rely on lpstat going clear first.
-    let mut stall_polls: u32    = 0;
-    let mut ipp_alert_active    = false; // true while an IPP-sourced alert is live
+    let mut stall_polls: u32 = 0;
+    let mut ipp_alert_active = false;
 
-    // ── Progress: time-based estimate ────────────────────────────────────────
     let total_impressions: u32 = meta.pages * meta.copies;
     let secs_per_page:     u64 = 8;
     let expected_secs:     u64 = (total_impressions as u64 * secs_per_page).max(1);
@@ -147,6 +161,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
         if started.elapsed() > Duration::from_secs(JOB_TIMEOUT_SECS) {
             println!("⏰ Print job timed out (job {})", job_id);
             let _ = app.emit("printer:timeout", ());
+            notify(job_id, "timeout");
             return Err("Print job timed out. Please contact staff.".into());
         }
 
@@ -160,6 +175,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
                 "pct":     100u8,
             }));
             let _ = app.emit("printer:completed", job_id);
+            notify(job_id, "completed");
             return Ok(());
         }
 
@@ -167,11 +183,12 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
         if !is_usb_present() {
             println!("❌ Printer unplugged during job {}!", job_id);
             let _ = app.emit("printer:disconnected", ());
+            notify(job_id, "disconnected");
             return Err("Printer was disconnected. Please contact staff.".into());
         }
 
         // ── Collect status ────────────────────────────────────────────────────
-        let raw_status = get_printer_status().unwrap_or_default(); // lpstat -p -l
+        let raw_status = get_printer_status().unwrap_or_default();
         let job_status = get_job_status(job_id).unwrap_or_default();
         let combined   = format!("{}\n{}", raw_status, job_status);
         let alerts     = parse_alerts(&combined);
@@ -182,12 +199,8 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
         }
 
         // ── IPP probe: when to run ────────────────────────────────────────────
-        // Run if:
-        //   (a) stall threshold reached (job in queue, printer idle, no lpstat alerts), OR
-        //   (b) an IPP alert is already active (we need to know when it clears)
         let canon_no_alerts = alerts.is_empty();
         let should_stall_probe = if ipp_alert_active {
-            // Always re-probe while an alert is live so we catch the clear
             true
         } else if canon_no_alerts {
             stall_polls += 1;
@@ -208,14 +221,10 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             Vec::new()
         };
 
-        // ── Merge: build the full picture from both lpstat + IPP ─────────────
-        // For alert detection we check BOTH sources. For clear detection we
-        // only clear when BOTH sources are clean (lpstat has no token AND
-        // IPP probe has no matching token).
+        // ── Merge lpstat + IPP ────────────────────────────────────────────────
         let ipp_lower = ipp_tokens.join(" ").to_lowercase();
         let all_lower = format!("{} {}", raw_lower, ipp_lower);
 
-        // Helper: does either source report this alert right now?
         let has_jam = alerts.iter().any(|a| a.contains("media-jam"))
             || all_lower.contains("media-jam")
             || all_lower.contains("paper jam")
@@ -246,7 +255,6 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             || all_lower.contains("ink out")
             || all_lower.contains("cartridge empty");
 
-        // Update ipp_alert_active so next poll knows to keep probing
         ipp_alert_active = has_jam || has_paper_empty || has_ink_empty;
 
         // ── Paper jam ─────────────────────────────────────────────────────────
@@ -254,20 +262,20 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             if !notified_paper_jam {
                 println!("🚨 Paper jam detected (job {})", job_id);
                 let _ = app.emit("printer:paper_jam", ());
+                notify(job_id, "paper_jam");
                 notified_paper_jam = true;
             }
             std::thread::sleep(Duration::from_secs(JOB_POLL_SECS));
             continue;
         }
         if notified_paper_jam {
-            // Only clear if both lpstat AND IPP agree it's gone
             if should_stall_probe {
                 println!("✅ Paper jam cleared (job {})", job_id);
                 let _ = app.emit("printer:jam_cleared", ());
+                notify(job_id, "jam_cleared");
                 notified_paper_jam = false;
                 stall_polls = 0;
             } else {
-                // Haven't probed yet this poll; keep blocking
                 std::thread::sleep(Duration::from_secs(JOB_POLL_SECS));
                 continue;
             }
@@ -278,16 +286,17 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             if !notified_paper_empty {
                 println!("📭 Paper tray empty (job {})", job_id);
                 let _ = app.emit("printer:paper_empty", ());
+                notify(job_id, "paper_empty");
                 notified_paper_empty = true;
             }
             std::thread::sleep(Duration::from_secs(JOB_POLL_SECS));
             continue;
         }
         if notified_paper_empty {
-            // Only clear after we've probed and confirmed paper-empty is gone
             if should_stall_probe {
                 println!("✅ Paper refilled — resuming (job {})", job_id);
                 let _ = app.emit("printer:paper_refilled", ());
+                notify(job_id, "paper_refilled");
                 notified_paper_empty = false;
                 stall_polls = 0;
             } else {
@@ -301,6 +310,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             if !notified_ink_empty {
                 println!("🖊️  Ink empty (job {})", job_id);
                 let _ = app.emit("printer:ink_empty", ());
+                notify(job_id, "ink_empty");
                 notified_ink_empty = true;
             }
             std::thread::sleep(Duration::from_secs(JOB_POLL_SECS));
@@ -310,6 +320,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             if should_stall_probe {
                 println!("✅ Ink replaced — resuming (job {})", job_id);
                 let _ = app.emit("printer:ink_replaced", ());
+                notify(job_id, "ink_replaced");
                 notified_ink_empty = false;
                 stall_polls = 0;
             } else {
@@ -328,6 +339,7 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             if has_ink_low {
                 println!("⚠️  Ink low — printing continues (job {})", job_id);
                 let _ = app.emit("printer:ink_low", ());
+                notify(job_id, "ink_low");
                 notified_ink_low = true;
             }
         }
@@ -361,25 +373,15 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
 }
 
 
-
 /// Deep-probe the printer via IPP to discover hardware state that lpstat -p -l
 /// may not surface (common on Canon GX series connected over USB-IPP bridge).
-///
-/// Strategy (in order of availability):
-///   1. `ipptool`  — query printer-state-reasons attribute directly
-///   2. `lpstat -o` with verbose state messages for the Canon queue
-///   3. `lpoptions -p <queue> -l` — sometimes surfaces state-reasons
 fn probe_ipp_state() -> Vec<String> {
     let mut tokens: Vec<String> = Vec::new();
 
-    // ── Strategy 1: ipptool (available on most Linux CUPS setups) ────────────
-    // We query the USB-connected Canon via CUPS' IPP bridge URI.
-    // The CUPS URI for a USB printer is typically ipp://localhost/printers/<queue>.
     let canon_queue = find_canon_queue_name();
     if let Some(ref queue) = canon_queue {
         let ipp_uri = format!("ipp://localhost/printers/{}", queue);
 
-        // Write a minimal ipptool test script to a temp file
         let test_script = r#"
 {
     NAME "Get printer-state-reasons"
@@ -403,15 +405,11 @@ fn probe_ipp_state() -> Vec<String> {
                 .arg(tmp_path)
                 .output()
             {
-                let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
+                let text    = String::from_utf8_lossy(&out.stdout).to_lowercase();
                 let errtext = String::from_utf8_lossy(&out.stderr).to_lowercase();
                 println!("🔎 ipptool stdout:\n{}", text);
                 println!("🔎 ipptool stderr:\n{}", errtext);
 
-                // Parse "printer-state-reasons = <token>" lines.
-                // ipptool may return comma-joined values like
-                // "media-empty-error,media-needed-error" — split on both
-                // whitespace and commas so each token is individual.
                 for line in text.lines().chain(errtext.lines()) {
                     if line.contains("printer-state-reasons") || line.contains("state-message") {
                         let after = line.splitn(2, '=').nth(1).unwrap_or("").trim().to_string();
@@ -432,13 +430,9 @@ fn probe_ipp_state() -> Vec<String> {
         }
     }
 
-    // ── Strategy 2: lpstat -o (job-level state message) ──────────────────────
-    // `lpstat -o` prints each job with its state-message, which sometimes
-    // includes free-text like "Waiting for paper" or "Paper tray empty".
     if let Ok(out) = Command::new("lpstat").arg("-o").output() {
         let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
         println!("🔎 lpstat -o output:\n{}", text);
-        // Extract meaningful phrases as pseudo-tokens
         for keyword in &[
             "paper", "tray", "jam", "jammed", "empty", "media",
             "ink", "cartridge", "door", "open", "offline",
@@ -453,7 +447,6 @@ fn probe_ipp_state() -> Vec<String> {
         }
     }
 
-    // ── Strategy 3: lpoptions (printer attributes) ────────────────────────────
     if let Some(ref queue) = canon_queue {
         if let Ok(out) = Command::new("lpoptions")
             .arg("-p").arg(queue)
@@ -468,23 +461,14 @@ fn probe_ipp_state() -> Vec<String> {
         }
     }
 
-    // ── Strategy 4: /dev/usb/lp* raw status byte (Linux-specific) ─────────────
-    // The USB printer exposes a status register at /dev/usb/lp0 (or lp1, etc.).
-    // Reading 1 byte gives a bitmask: bit 5 = paper out, bit 3 = error.
-    // This is a last-resort fallback when CUPS gives us nothing.
     for lp_dev in &["/dev/usb/lp0", "/dev/usb/lp1", "/dev/usb/lp2"] {
         if let Ok(mut file) = fs::File::open(lp_dev) {
             use std::io::Read;
             let mut buf = [0u8; 1];
-            // LPGETSTATUS ioctl would be ideal, but a raw read of the status
-            // byte works on many Canon USB printers.
             if file.read_exact(&mut buf).is_ok() {
                 let status_byte = buf[0];
                 println!("🔎 USB lp status byte from {}: 0x{:02X}", lp_dev, status_byte);
-                // Bit 5 (0x20): paper out / selected
-                // Bit 3 (0x08): error
                 if status_byte & 0x20 == 0 {
-                    // Paper-out bit is ACTIVE LOW on most printers
                     tokens.push("media-empty".to_string());
                     println!("🔎 USB status: paper-out bit set");
                 }
@@ -496,7 +480,6 @@ fn probe_ipp_state() -> Vec<String> {
     tokens
 }
 
-/// Returns the CUPS queue name for the Canon printer (e.g. "Canon_GX6100_series_USB").
 fn find_canon_queue_name() -> Option<String> {
     Command::new("lpstat")
         .arg("-p")
@@ -511,9 +494,6 @@ fn find_canon_queue_name() -> Option<String> {
         })
 }
 
-
-// ── Shared helpers ────────────────────────────────────────────────────────────
-
 fn get_printer_status() -> Result<String, String> {
     Command::new("lpstat")
         .arg("-p")
@@ -523,16 +503,12 @@ fn get_printer_status() -> Result<String, String> {
         .map_err(|e| format!("lpstat error: {}", e))
 }
 
-/// `lpstat -o <job_id>` — returns the job's current state message.
-/// Useful for detecting "Waiting for paper" free-text that Canon emits
-/// at the job level rather than the printer level.
 fn get_job_status(job_id: u32) -> Result<String, String> {
     Command::new("lpstat")
         .arg("-o")
         .output()
         .map(|o| {
             let text = String::from_utf8_lossy(&o.stdout).into_owned();
-            // Filter to lines that mention our job id, plus any "Reason" lines
             text.lines()
                 .filter(|l| l.contains(&job_id.to_string()) || l.to_lowercase().contains("reason"))
                 .collect::<Vec<_>>()
@@ -541,8 +517,6 @@ fn get_job_status(job_id: u32) -> Result<String, String> {
         .map_err(|e| format!("lpstat -o error: {}", e))
 }
 
-/// Extract all meaningful tokens from the Canon printer's Alerts /
-/// printer-state-reasons lines in `lpstat -p -l` output.
 fn parse_alerts(status: &str) -> Vec<String> {
     let mut in_canon = false;
     let mut tokens   = Vec::new();
@@ -613,7 +587,7 @@ fn is_usb_present() -> bool {
         .output()
         .map(|o| {
             let text  = String::from_utf8_lossy(&o.stdout).to_lowercase();
-            let found = text.contains("04a9"); // Canon USB vendor ID
+            let found = text.contains("04a9");
             println!("🔌 Canon USB: {}", if found { "found" } else { "NOT found" });
             found
         })

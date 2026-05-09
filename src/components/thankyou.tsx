@@ -169,16 +169,7 @@ export default function ThankYouPage() {
           Visit Again
         </div>
 
-        {/* Yellow underline accent */}
-        <div style={{
-          height: "3px",
-          background: "#F2CB07",
-          borderRadius: "100px",
-          marginTop: "8px",
-          animation: "expandWidth 0.5s ease both",
-          animationDelay: "0.7s",
-          boxShadow: "0 0 8px rgba(242,203,7,0.6)",
-        }} />
+      
       </div>
 
       {/* ── PRINT COMPLETE BADGE ── */}

@@ -29,23 +29,7 @@ export default function Home() {
       className="w-screen h-screen flex flex-col overflow-hidden"
       style={{ backgroundColor: "#7E49F2", fontFamily: "'Sora', sans-serif" }}
     >
-      <style>{`
-        @keyframes dropBounce {
-          0%   { transform: translateY(0px)  scaleY(1)    scaleX(1); }
-          30%  { transform: translateY(0px)  scaleY(1)    scaleX(1); }
-          50%  { transform: translateY(18px) scaleY(0.88) scaleX(1.06); }
-          65%  { transform: translateY(-6px) scaleY(1.05) scaleX(0.97); }
-          78%  { transform: translateY(4px)  scaleY(0.97) scaleX(1.02); }
-          90%  { transform: translateY(-2px) scaleY(1.01) scaleX(0.99); }
-          100% { transform: translateY(0px)  scaleY(1)    scaleX(1); }
-        }
-
-        .drop-bounce {
-          animation: dropBounce 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-          transform-origin: center bottom;
-        }
-      `}</style>
-
+     
       {/* TOP BAR */}
       <div
         className="flex items-center justify-between flex-shrink-0"
@@ -71,15 +55,15 @@ export default function Home() {
       {/* IMAGE + BUTTON CENTER */}
       <div className="flex-1 flex items-center justify-center relative">
 
-        {/* IMAGE with drop-bounce animation */}
+    
         <div
           className="drop-bounce"
           style={{
             position: "absolute",
             top: "22%",
-            transform: "translateY(-50%)",
+          
             width: "clamp(220px, 32vw, 340px)",
-            filter: "drop-shadow(0 16px 32px rgba(0,0,0,0.32))",
+          
           }}
         >
           <img
@@ -97,8 +81,8 @@ export default function Home() {
             width: "180px",
             height: "52px",
             background: "white",
-            border: "3px solid #7E49F2",
-            boxShadow: "0px 8px 18px rgba(0,0,0,0.20)",
+            border: "1px solid #7E49F2",
+            boxShadow: "0px 6px 14px rgba(0,0,0,0.20)",
             color: "#7E49F2",
             fontSize: "18px",
             letterSpacing: "0.5px",

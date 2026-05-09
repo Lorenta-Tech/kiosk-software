@@ -16,6 +16,10 @@ interface FileProgress {
   download_status: "pending" | "downloading" | "done" | "failed";
   print_status: "pending" | "printing" | "done" | "failed";
   local_path?: string;
+  // Real-time print progress for the currently printing file
+  print_pct?: number;        // 0-100
+  print_current?: number;    // pages printed so far
+  print_total?: number;      // total pages × copies
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -24,7 +28,7 @@ function getExt(name: string) {
 }
 
 const EXT_COLOR: Record<string, string> = {
-  pdf: "#F2CB07",
+  pdf:  "#F2CB07",
   docx: "#F2CB07",
   pptx: "#F2CB07",
   xlsx: "#18a06b",
@@ -156,7 +160,7 @@ function FileRow({
   phase: Phase;
   idx: number;
 }) {
-  const ext = getExt(fp.file_name);
+  const ext   = getExt(fp.file_name);
   const color = EXT_COLOR[ext] || "#7E49F2";
 
   const status =
@@ -165,27 +169,33 @@ function FileRow({
       : fp.print_status;
 
   const statusLabel: Record<string, string> = {
-    pending: "Waiting…",
+    pending:     "Waiting…",
     downloading: "Downloading…",
-    printing: "Printing…",
-    done: phase === "downloading" ? "Downloaded" : "Printed ✓",
-    failed: "Failed",
+    printing:    "Printing…",
+    done:        phase === "downloading" ? "Downloaded" : "Printed ✓",
+    failed:      "Failed",
   };
 
   const statusColor: Record<string, string> = {
-    pending: "rgba(255,255,255,0.40)",
+    pending:     "rgba(255,255,255,0.40)",
     downloading: "#F2CB07",
-    printing: "#F2CB07",
-    done: "#4ade80",
-    failed: "#f87171",
+    printing:    "#F2CB07",
+    done:        "#4ade80",
+    failed:      "#f87171",
   };
+
+  // Show the per-file print mini-bar only while this file is actively printing
+  const showPrintBar =
+    phase === "printing" &&
+    fp.print_status === "printing" &&
+    fp.print_pct !== undefined;
 
   return (
     <div
       style={{
         display: "flex",
-        alignItems: "center",
-        gap: "14px",
+        flexDirection: "column",
+        gap: "8px",
         background: "rgba(255,255,255,0.08)",
         borderRadius: "16px",
         padding: "14px 18px",
@@ -194,65 +204,108 @@ function FileRow({
         border: "1px solid rgba(255,255,255,0.10)",
       }}
     >
-      {/* Ext badge */}
-      <div
-        style={{
-          background: `${color}20`,
-          border: `1.5px solid ${color}50`,
-          borderRadius: "8px",
-          padding: "4px 9px",
-          fontSize: "10px",
-          fontWeight: 800,
-          color: color,
-          letterSpacing: "0.6px",
-          textTransform: "uppercase",
-          flexShrink: 0,
-        }}
-      >
-        {ext}
+      {/* Top row: ext badge · name · status */}
+      <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+        {/* Ext badge */}
+        <div
+          style={{
+            background: `${color}20`,
+            border: `1.5px solid ${color}50`,
+            borderRadius: "8px",
+            padding: "4px 9px",
+            fontSize: "10px",
+            fontWeight: 800,
+            color: color,
+            letterSpacing: "0.6px",
+            textTransform: "uppercase",
+            flexShrink: 0,
+          }}
+        >
+          {ext}
+        </div>
+
+        {/* Name */}
+        <div
+          style={{
+            flex: 1,
+            fontWeight: 600,
+            fontSize: "13px",
+            color: "white",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {fp.file_name}
+        </div>
+
+        {/* Status */}
+        <div
+          style={{
+            fontSize: "12px",
+            fontWeight: 700,
+            color: statusColor[status] || "white",
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+          }}
+        >
+          {(status === "downloading" || status === "printing") && (
+            <span
+              style={{
+                display: "inline-block",
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                background: "#F2CB07",
+                animation: "pulse 1s ease-in-out infinite",
+              }}
+            />
+          )}
+          {statusLabel[status] || status}
+        </div>
       </div>
 
-      {/* Name */}
-      <div
-        style={{
-          flex: 1,
-          fontWeight: 600,
-          fontSize: "13px",
-          color: "white",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
-        {fp.file_name}
-      </div>
-
-      {/* Status */}
-      <div
-        style={{
-          fontSize: "12px",
-          fontWeight: 700,
-          color: statusColor[status] || "white",
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-        }}
-      >
-        {(status === "downloading" || status === "printing") && (
-          <span
+      {/* Per-file print progress mini-bar (only while printing this file) */}
+      {showPrintBar && (
+        <div style={{ paddingTop: "2px" }}>
+          <div
             style={{
-              display: "inline-block",
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              background: "#F2CB07",
-              animation: "pulse 1s ease-in-out infinite",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "5px",
             }}
-          />
-        )}
-        {statusLabel[status] || status}
-      </div>
+          >
+            <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.55)", fontWeight: 600 }}>
+              Page progress
+            </span>
+            <span style={{ fontSize: "10px", color: "#F2CB07", fontWeight: 700 }}>
+              {fp.print_current ?? 0} / {fp.print_total ?? "?"} &nbsp;·&nbsp; {fp.print_pct}%
+            </span>
+          </div>
+          <div
+            style={{
+              height: "5px",
+              borderRadius: "100px",
+              background: "rgba(255,255,255,0.12)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                width: `${fp.print_pct}%`,
+                background: "linear-gradient(90deg, #F2CB07, #f7d94a)",
+                borderRadius: "100px",
+                transition: "width 0.6s ease",
+                boxShadow: "0 0 6px rgba(242,203,7,0.6)",
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -260,25 +313,26 @@ function FileRow({
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function LoadingPage() {
   const navigate = useNavigate();
-  const job = getJob();
+  const job   = getJob();
   const files = job?.files ?? [];
 
-  const [phase, setPhase] = useState<Phase>("downloading");
+  const [phase, setPhase]               = useState<Phase>("downloading");
   const [fileProgress, setFileProgress] = useState<FileProgress[]>(
     files.map((f: any) => ({
-      file_id: f.file_id,
-      file_name: f.file_name,
+      file_id:         f.file_id,
+      file_name:       f.file_name,
       download_status: "pending",
-      print_status: "pending",
+      print_status:    "pending",
     }))
   );
-  const [errorModal, setErrorModal] = useState<string | null>(null);
+  const [errorModal, setErrorModal]       = useState<string | null>(null);
   const [overallMessage, setOverallMessage] = useState("Preparing your documents…");
-  const [printerAlert, setPrinterAlert] = useState<{ icon: string; message: string } | null>(null);
+  const [printerAlert, setPrinterAlert]   = useState<{ icon: string; message: string } | null>(null);
 
-  // Keep a ref to fileProgress so event listeners can read latest state
-  const progressRef = useRef(fileProgress);
-  progressRef.current = fileProgress;
+  // Keep refs to latest state so event listeners always see fresh values
+  const progressRef          = useRef(fileProgress);
+  progressRef.current        = fileProgress;
+  const currentFileIdRef     = useRef<string | null>(null); // which file is printing right now
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   function updateDownload(file_id: string, patch: Partial<FileProgress>) {
@@ -299,7 +353,7 @@ export default function LoadingPage() {
       try {
         updateDownload(file.file_id, { download_status: "downloading" });
         const path: string = await invoke("download_pdf_url_commands", {
-          url: file.download_url,
+          url:      file.download_url,
           fileName: file.file_name,
         });
         updateDownload(file.file_id, { download_status: "done", local_path: path });
@@ -315,43 +369,54 @@ export default function LoadingPage() {
             `Failed to download "${file.file_name}" after ${MAX_RETRIES + 1} attempts.`
           );
         }
-        // brief pause before retry
         await new Promise((r) => setTimeout(r, 1500));
       }
     }
     throw new Error("unreachable");
   }
 
-  // ── Print one file (sequential — never called concurrently) ─────────────
+  // ── Print one file (sequential — never called concurrently) ──────────────
   async function printFile(file: any, localPath: string) {
-    updatePrint(file.file_id, { print_status: "printing" });
+    currentFileIdRef.current = file.file_id;
+    updatePrint(file.file_id, {
+      print_status:  "printing",
+      print_pct:     0,
+      print_current: 0,
+      print_total:   (file.number_of_pages ?? 1) * (file.copies ?? 1),
+    });
+
     try {
       await invoke("print_pdf_command", {
-        pdfPath:    localPath,
-        fileName:   file.file_name,
-        pages:      file.number_of_pages ?? 1,
-        copies:     file.copies ?? 1,
-        colorMode:  file.printing_mode ?? "monochromatic",  // "monochromatic" | "color"
-        duplex:     file.printing_side === "double_side",   // true = two-sided
+        pdfPath:   localPath,
+        fileName:  file.file_name,
+        pages:     file.number_of_pages ?? 1,
+        copies:    file.copies ?? 1,
+        colorMode: file.printing_mode === "color" ? "Color" : "Monochrome",
+        duplex:    file.printing_side === "double_side",
       });
-      updatePrint(file.file_id, { print_status: "done" });
+      updatePrint(file.file_id, {
+        print_status:  "done",
+        print_pct:     100,
+        print_current: (file.number_of_pages ?? 1) * (file.copies ?? 1),
+      });
     } catch (err) {
       updatePrint(file.file_id, { print_status: "failed" });
       throw new Error(`Failed to print "${file.file_name}": ${err}`);
+    } finally {
+      currentFileIdRef.current = null;
     }
   }
 
   // ── Main flow ─────────────────────────────────────────────────────────────
-  // Guard against React StrictMode double-invoking useEffect in development
   const hasStarted = useRef(false);
 
   useEffect(() => {
     if (!files.length) return;
-    if (hasStarted.current) return;   // ← prevent second invocation
+    if (hasStarted.current) return;
     hasStarted.current = true;
 
     async function run() {
-      // ── Phase 1: Download all ──────────────────────────────────────────────
+      // Phase 1: Download all ─────────────────────────────────────────────────
       setOverallMessage("Downloading your documents…");
       const localPaths: { file: any; path: string }[] = [];
 
@@ -364,11 +429,11 @@ export default function LoadingPage() {
             err?.message ||
               `Could not download "${file.file_name}". Please contact support.`
           );
-          return; // stop — user must tap "Try Again"
+          return;
         }
       }
 
-      // ── Phase 2: Print all ────────────────────────────────────────────────
+      // Phase 2: Print all ────────────────────────────────────────────────────
       setPhase("printing");
       setOverallMessage("Sending to printer…");
 
@@ -377,14 +442,13 @@ export default function LoadingPage() {
           await printFile(file, path);
         } catch (err: any) {
           setErrorModal(
-            err?.message ||
-              `A print error occurred. Please contact support.`
+            err?.message || `A print error occurred. Please contact support.`
           );
           return;
         }
       }
 
-      // ── Done ──────────────────────────────────────────────────────────────
+      // Done ──────────────────────────────────────────────────────────────────
       setPhase("done");
       setOverallMessage("All done! ✓");
       setTimeout(() => navigate("/done"), 1200);
@@ -398,22 +462,42 @@ export default function LoadingPage() {
   useEffect(() => {
     const unlisten: (() => void)[] = [];
 
-    // Non-fatal: show a banner, printing is paused but will auto-resume
+    // Real-time page progress from Rust
+    listen<{ current: number; total: number; pct: number }>(
+      "printer:page_progress",
+      ({ payload }) => {
+        const id = currentFileIdRef.current;
+        if (!id) return;
+        setFileProgress((prev) =>
+          prev.map((fp) =>
+            fp.file_id === id
+              ? {
+                  ...fp,
+                  print_pct:     payload.pct,
+                  print_current: payload.current,
+                  print_total:   payload.total,
+                }
+              : fp
+          )
+        );
+      }
+    ).then((fn) => unlisten.push(fn));
+
+    // Non-fatal banners (paused, auto-resume when resolved)
     const bannerEvents: [string, string, string][] = [
-      ["printer:paper_empty",  "📭", "Paper tray empty — please refill the paper."],
-      ["printer:paper_jam",    "🚨", "Paper jam detected — please clear the jam."],
-      ["printer:ink_empty",    "🖊️", "Ink cartridge empty — please replace it."],
-      ["printer:ink_low",      "⚠️", "Ink level is low. Printing continues."],
+      ["printer:paper_empty", "📭", "Paper tray empty — please refill the paper."],
+      ["printer:paper_jam",   "🚨", "Paper jam detected — please clear the jam."],
+      ["printer:ink_empty",   "🖊️", "Ink cartridge empty — please replace it."],
+      ["printer:ink_low",     "⚠️", "Ink level is low. Printing continues."],
     ];
 
-    // Cleared: dismiss the banner
     const clearedEvents = [
       "printer:paper_refilled",
       "printer:jam_cleared",
       "printer:ink_replaced",
     ];
 
-    // Fatal: show the contact-support modal
+    // Fatal: show contact-support modal
     const fatalEvents: [string, string][] = [
       ["printer:disconnected", "Printer was disconnected. Please contact staff."],
       ["printer:timeout",      "Print job timed out. Please contact staff."],
@@ -421,15 +505,11 @@ export default function LoadingPage() {
     ];
 
     bannerEvents.forEach(([event, icon, message]) => {
-      listen(event, () => {
-        setPrinterAlert({ icon, message });
-      }).then((fn) => unlisten.push(fn));
+      listen(event, () => setPrinterAlert({ icon, message })).then((fn) => unlisten.push(fn));
     });
 
     clearedEvents.forEach((event) => {
-      listen(event, () => {
-        setPrinterAlert(null);
-      }).then((fn) => unlisten.push(fn));
+      listen(event, () => setPrinterAlert(null)).then((fn) => unlisten.push(fn));
     });
 
     fatalEvents.forEach(([event, msg]) => {
@@ -442,23 +522,32 @@ export default function LoadingPage() {
     return () => unlisten.forEach((fn) => fn());
   }, []);
 
-  // ── Computed progress for display ─────────────────────────────────────────
-  const downloadedCount = fileProgress.filter(
-    (fp) => fp.download_status === "done"
-  ).length;
-  const printedCount = fileProgress.filter(
-    (fp) => fp.print_status === "done"
-  ).length;
-  const total = fileProgress.length;
+  // ── Computed progress for the bottom progress bar ─────────────────────────
+  const downloadedCount = fileProgress.filter((fp) => fp.download_status === "done").length;
+  const printedCount    = fileProgress.filter((fp) => fp.print_status === "done").length;
+  const total           = fileProgress.length;
+
+  // During printing: use real page-level progress for the active file,
+  // then blend with already-completed files for an overall %.
+  const printingFile = fileProgress.find((fp) => fp.print_status === "printing");
+  const activeFilePct = printingFile?.print_pct ?? 0;
 
   const progressPct =
     phase === "downloading"
       ? (downloadedCount / total) * 100
-      : (printedCount / total) * 100;
+      : total === 0
+      ? 0
+      : ((printedCount * 100) + activeFilePct) / total;
 
-  const SEGMENTS = 5;
+  const SEGMENTS    = 5;
   const filledSegments = Math.floor((progressPct / 100) * SEGMENTS);
-  const partialFill = ((progressPct / 100) * SEGMENTS) % 1;
+  const partialFill    = ((progressPct / 100) * SEGMENTS) % 1;
+
+  // Label for bottom counter
+  const printLabel =
+    printingFile && printingFile.print_pct !== undefined
+      ? `${printedCount} / ${total} files  ·  current: ${printingFile.print_pct}%`
+      : `${printedCount} / ${total} files printed`;
 
   return (
     <div
@@ -507,7 +596,7 @@ export default function LoadingPage() {
       <div style={{ color: "rgba(255,255,255,0.50)", fontSize: "13px", fontWeight: 500, textAlign: "center", marginBottom: "24px" }}>
         {phase === "downloading"
           ? `${downloadedCount} / ${total} files downloaded`
-          : `${printedCount} / ${total} files printed`}
+          : printLabel}
       </div>
 
       {/* ── File list ── */}
@@ -558,7 +647,7 @@ export default function LoadingPage() {
         {/* Segmented bar */}
         <div style={{ display: "flex", gap: "6px" }}>
           {Array.from({ length: SEGMENTS }).map((_, i) => {
-            const isFull = i < filledSegments;
+            const isFull    = i < filledSegments;
             const isPartial = i === filledSegments && partialFill > 0;
             return (
               <div key={i} style={{ flex: 1, height: "10px", borderRadius: "100px", background: "rgba(255,255,255,0.12)", overflow: "hidden", position: "relative", boxShadow: isPartial ? "0 0 0 1px rgba(242,203,7,0.4)" : "none" }}>
@@ -627,7 +716,7 @@ export default function LoadingPage() {
           message={errorModal}
           onDismiss={() => {
             setErrorModal(null);
-            navigate(-1); // go back to metadata so user can retry
+            navigate(-1);
           }}
         />
       )}

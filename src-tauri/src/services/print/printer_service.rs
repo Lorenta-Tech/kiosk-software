@@ -18,8 +18,29 @@ const JOB_POLL_SECS:    u64 = 3;
 const JOB_TIMEOUT_SECS: u64 = 300;
 
 
+// ── Job metadata passed in from the command layer ────────────────────────────
+pub struct PrintJobMeta<'a> {
+    pub file_name:  &'a str,
+    pub pages:      u32,
+    pub copies:     u32,
+    pub color_mode: &'a str,   // "Monochrome" | "Color"
+    pub duplex:     bool,
+}
 
-pub fn send_print_job(app: &AppHandle, pdf_path: &str) -> Result<(), String> {
+
+pub fn send_print_job(app: &AppHandle, pdf_path: &str, meta: &PrintJobMeta) -> Result<(), String> {
+
+    // ── Structured log: job received ─────────────────────────────────────────
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("📄 PRINT JOB RECEIVED");
+    println!("   File      : {}", meta.file_name);
+    println!("   Path      : {}", pdf_path);
+    println!("   Pages     : {}", meta.pages);
+    println!("   Copies    : {}", meta.copies);
+    println!("   Color     : {}", meta.color_mode);
+    println!("   Duplex    : {}", if meta.duplex { "Two-sided (long edge)" } else { "One-sided" });
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
     println!("  Checking printer before job...");
     check_printer_ready()?;
 
@@ -32,17 +53,22 @@ pub fn send_print_job(app: &AppHandle, pdf_path: &str) -> Result<(), String> {
             format!("Canon printer not found. Available: {:?}", names)
         })?;
 
-    println!("Using printer: {}", printer.name);
+    println!("🖨️  Using printer : {}", printer.name);
 
     let data = fs::read(pdf_path)
         .map_err(|e| format!("Failed to read PDF: {}", e))?;
 
+    // Resolve options from meta (fall back to constants when caller omits them)
+    let color_str = meta.color_mode;
+    let sides_str = if meta.duplex { DUPLEX } else { "one-sided" };
+    let copies_str = &meta.copies.to_string();
+
     let options = PrinterJobOptions {
         name: Some("Kiosk Print"),
         raw_properties: &[
-            ("copies",           COPIES),
-            ("print-color-mode", COLOR_MODE),
-            ("sides",            DUPLEX),
+            ("copies",           copies_str),
+            ("print-color-mode", color_str),
+            ("sides",            sides_str),
             ("media",            MEDIA),
             ("collate",          "true"),
         ],
@@ -51,14 +77,16 @@ pub fn send_print_job(app: &AppHandle, pdf_path: &str) -> Result<(), String> {
 
     match printer.print(&data, options) {
         Ok(job_id) => {
-            println!("Print job submitted. Job ID: {job_id}");
+            println!("✅ Print job submitted  — Job ID : {job_id}");
+            println!("   Waiting for {} page(s) × {} cop(ies) to finish…", meta.pages, meta.copies);
             let _ = app.emit("printer:started", job_id);
 
-            let result = wait_for_job(app, job_id as u32);
+            let result = wait_for_job(app, job_id as u32, meta);
             delete_pdf(pdf_path); // always delete — success, failure, or timeout
             result
         }
         Err(e) => {
+            println!("❌ Failed to submit print job: {:?}", e);
             let _ = app.emit("printer:failed", format!("{:?}", e));
             delete_pdf(pdf_path);
             Err(format!("Failed to submit print job: {:?}", e))
@@ -84,43 +112,59 @@ pub fn is_printer_ready() -> bool {
 
 
 
-fn wait_for_job(app: &AppHandle, job_id: u32) -> Result<(), String> {
+fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(), String> {
     let mut notified_paper_empty = false;
     let mut notified_paper_jam   = false;
     let mut notified_ink_empty   = false;
     let mut notified_ink_low     = false;
 
+    // ── Page-progress tracking ───────────────────────────────────────────────
+    // CUPS doesn't expose a per-page counter directly, so we estimate progress
+    // by elapsed time vs expected duration (pages × copies × ~4 s/page).
+    // When the job disappears from the queue we emit 100 %.
+    let total_impressions = meta.pages * meta.copies;
+    let secs_per_page: u64 = 4; // tune to your Canon's actual speed
+    let expected_secs = total_impressions as u64 * secs_per_page;
+
     let started = Instant::now();
+    let mut last_emitted_pct: u8 = 0;
 
     loop {
         // ── Timeout ───────────────────────────────────────────────────────────
         if started.elapsed() > Duration::from_secs(JOB_TIMEOUT_SECS) {
-            println!("⏰ Print job timed out");
+            println!("⏰ Print job timed out (job {})", job_id);
             let _ = app.emit("printer:timeout", ());
             return Err("Print job timed out. Please contact staff.".into());
         }
 
-    
+        // ── Job finished ──────────────────────────────────────────────────────
         if !job_exists(job_id) {
-            println!("✅ Print job {} completed", job_id);
+            println!("✅ Print job {} completed  [{} page(s) × {} cop(ies)]",
+                job_id, meta.pages, meta.copies);
+            // Emit 100 % before the completed event so the bar fills first
+            let _ = app.emit("printer:page_progress", serde_json::json!({
+                "current": total_impressions,
+                "total":   total_impressions,
+                "pct":     100u8,
+            }));
             let _ = app.emit("printer:completed", job_id);
             return Ok(());
         }
 
-    
+        // ── USB disconnect ────────────────────────────────────────────────────
         if !is_usb_present() {
-            println!("❌ Printer unplugged during printing!");
+            println!("❌ Printer unplugged during printing! (job {})", job_id);
             let _ = app.emit("printer:disconnected", ());
             return Err("Printer was disconnected. Please contact staff.".into());
         }
 
- 
+        // ── Active alerts ─────────────────────────────────────────────────────
         let alerts = get_active_alerts();
 
-        
+        // Paper jam
         if alerts.iter().any(|a| a.contains("media-jam")) {
             if !notified_paper_jam {
-                println!(" Paper jam detected");
+                println!("🚨 Paper jam detected  (job {})", job_id);
                 let _ = app.emit("printer:paper_jam", ());
                 notified_paper_jam = true;
             }
@@ -128,14 +172,15 @@ fn wait_for_job(app: &AppHandle, job_id: u32) -> Result<(), String> {
             continue;
         }
         if notified_paper_jam {
-            println!("Paper jam cleared");
+            println!("✅ Paper jam cleared  (job {})", job_id);
             let _ = app.emit("printer:jam_cleared", ());
             notified_paper_jam = false;
         }
 
+        // Paper empty
         if alerts.iter().any(|a| a.contains("media-empty") || a.contains("media-needed")) {
             if !notified_paper_empty {
-                println!("🧾 Paper empty");
+                println!("📭 Paper tray empty  (job {})", job_id);
                 let _ = app.emit("printer:paper_empty", ());
                 notified_paper_empty = true;
             }
@@ -143,15 +188,15 @@ fn wait_for_job(app: &AppHandle, job_id: u32) -> Result<(), String> {
             continue;
         }
         if notified_paper_empty {
-            println!("Paper refilled");
+            println!("✅ Paper refilled  (job {})", job_id);
             let _ = app.emit("printer:paper_refilled", ());
             notified_paper_empty = false;
         }
 
-       
+        // Ink empty
         if alerts.iter().any(|a| a.contains("marker-supply-empty")) {
             if !notified_ink_empty {
-                println!("🖊️  Ink empty");
+                println!("🖊️  Ink cartridge empty  (job {})", job_id);
                 let _ = app.emit("printer:ink_empty", ());
                 notified_ink_empty = true;
             }
@@ -159,22 +204,45 @@ fn wait_for_job(app: &AppHandle, job_id: u32) -> Result<(), String> {
             continue;
         }
         if notified_ink_empty {
-            println!("Ink replaced");
+            println!("✅ Ink replaced  (job {})", job_id);
             let _ = app.emit("printer:ink_replaced", ());
             notified_ink_empty = false;
         }
 
+        // Ink low (non-blocking — printing continues)
         if !notified_ink_low
             && alerts.iter().any(|a| {
                 a.contains("marker-supply-low") || a.contains("marker-waste-almost-full")
             })
         {
-            println!("Ink low (printing continues)");
+            println!("⚠️  Ink level low — printing continues  (job {})", job_id);
             let _ = app.emit("printer:ink_low", ());
             notified_ink_low = true;
         }
 
-        println!("Printing in progress (job {})...", job_id);
+        // ── Estimate & emit page progress ─────────────────────────────────────
+        let elapsed = started.elapsed().as_secs().min(expected_secs);
+        let pct = if expected_secs == 0 {
+            50u8
+        } else {
+            // Cap at 95 % — the final 100 % is only emitted on job completion
+            ((elapsed * 100 / expected_secs) as u8).min(95)
+        };
+
+        if pct > last_emitted_pct {
+            last_emitted_pct = pct;
+            let estimated_current = ((pct as u32 * total_impressions) / 100).min(total_impressions);
+            println!("🖨️  Printing… job {} | ~{}% | ~{}/{} page(s)",
+                job_id, pct, estimated_current, total_impressions);
+            let _ = app.emit("printer:page_progress", serde_json::json!({
+                "current": estimated_current,
+                "total":   total_impressions,
+                "pct":     pct,
+            }));
+        } else {
+            println!("🖨️  Printing in progress (job {})…", job_id);
+        }
+
         std::thread::sleep(Duration::from_secs(JOB_POLL_SECS));
     }
 }
@@ -292,7 +360,7 @@ fn job_exists(job_id: u32) -> bool {
 
 fn delete_pdf(path: &str) {
     match fs::remove_file(path) {
-        Ok(_)  => println!(" PDF deleted: {}", path),
-        Err(e) => println!(" Could not delete PDF {}: {}", path, e),
+        Ok(_)  => println!("🗑️  PDF deleted: {}", path),
+        Err(e) => println!("⚠️  Could not delete PDF {}: {}", path, e),
     }
 }

@@ -14,7 +14,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::otp::otp_commands::verify_otp_commands,
             commands::pdf_job::job_commands::download_pdf_url_commands,
-            commands::print::print_commands::cmd_print_file
+            // commands::print::print_commands::cmd_print_file,
+            commands::pdf_job::job_commands::print_pdf_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri app");

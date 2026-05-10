@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter};
 
+use crate::services::expire_session::expire::expire_session;
 use crate::services::server::printer_event_service::notify_printer_event;
 
 
@@ -178,23 +179,31 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
             return Err("Print job timed out. Please contact staff.".into());
         }
 
-        // ── Job finished ──────────────────────────────────────────────────────
-        if !job_exists(job_id) {
-            println!("✅ Print job {} completed [{} page(s) × {} cop(ies)]",
-                job_id, meta.pages, meta.copies);
-            let _ = app.emit("printer:page_progress", serde_json::json!({
-                "current": total_impressions,
-                "total":   total_impressions,
-                "pct":     100u8,
-            }));
-            let _ = app.emit("printer:completed", job_id);
-            notify(job_id, "completed", meta.session_id);  // ← session_id
-            return Ok(());
-        }
+       
+  
+if !job_exists(job_id) {
+    println!("Print job {} completed [{} page(s) × {} cop(ies)]",
+        job_id, meta.pages, meta.copies);
+    let _ = app.emit("printer:page_progress", serde_json::json!({
+        "current": total_impressions,
+        "total":   total_impressions,
+        "pct":     100u8,
+    }));
+    let _ = app.emit("printer:completed", job_id);
+    notify(job_id, "completed", meta.session_id);
 
-        // ── USB disconnect ────────────────────────────────────────────────────
+  
+    let session_owned = meta.session_id.to_string();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = expire_session(&session_owned).await {
+            println!("Failed to expire session: {}", e);
+        }
+    });
+
+    return Ok(());
+}
         if !is_usb_present() {
-            println!("❌ Printer unplugged during job {}!", job_id);
+            println!(" Printer unplugged during job {}!", job_id);
             let _ = app.emit("printer:disconnected", ());
             notify(job_id, "disconnected", meta.session_id);  // ← session_id
             return Err("Printer was disconnected. Please contact staff.".into());

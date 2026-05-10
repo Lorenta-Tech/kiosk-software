@@ -110,7 +110,11 @@ export default function MetadataPage() {
 
   const [secsLeft, setSecsLeft]         = useState(60);
   const [timerWarning, setTimerWarning] = useState(false);
-
+// Add this function inside the component, before the return
+const playTouch = () => {
+  const audio = new Audio("/music/touch.wav");
+  audio.play().catch(() => {});
+};
   const resetTimer = useCallback(() => {
     setSecsLeft(60);
     setTimerWarning(false);
@@ -191,31 +195,58 @@ export default function MetadataPage() {
       }}>
         {/* Left: back icon + title + subtitle */}
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <button
-            onClick={(e) => { e.stopPropagation(); navigate(-1); }}
-            style={{
-              width: "44px", height: "44px",
-              background: "rgba(255,255,255,0.15)",
-              border: "1.5px solid rgba(255,255,255,0.25)",
-              borderRadius: "14px",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              cursor: "pointer",
-              transition: "background 0.15s ease, transform 0.15s ease",
-              flexShrink: 0,
-            }}
-            onMouseEnter={(e)  => { e.currentTarget.style.background = "rgba(255,255,255,0.25)"; }}
-            onMouseLeave={(e)  => { e.currentTarget.style.background = "rgba(255,255,255,0.15)"; }}
-            onMouseDown={(e)   => { e.currentTarget.style.transform = "scale(0.92)"; }}
-            onMouseUp={(e)     => { e.currentTarget.style.transform = "scale(1)"; }}
-            onTouchStart={(e)  => { e.stopPropagation(); e.currentTarget.style.transform = "scale(0.92)"; }}
-            onTouchEnd={(e)    => { e.currentTarget.style.transform = "scale(1)"; }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-              stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </button>
-
+       <button
+  onClick={(e) => {
+    e.stopPropagation();
+    playTouch();
+    navigate(-1);
+  }}
+  style={{
+    width: "44px",
+    height: "44px",
+    background: "rgba(255,255,255,0.15)",
+    border: "1.5px solid rgba(255,255,255,0.25)",
+    borderRadius: "14px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    transition: "background 0.15s ease, transform 0.15s ease",
+    flexShrink: 0,
+  }}
+  onMouseEnter={(e) => {
+    e.currentTarget.style.background = "rgba(255,255,255,0.25)";
+  }}
+  onMouseLeave={(e) => {
+    e.currentTarget.style.background = "rgba(255,255,255,0.15)";
+  }}
+  onMouseDown={(e) => {
+    e.currentTarget.style.transform = "scale(0.92)";
+  }}
+  onMouseUp={(e) => {
+    e.currentTarget.style.transform = "scale(1)";
+  }}
+  onTouchStart={(e) => {
+    e.stopPropagation();
+    e.currentTarget.style.transform = "scale(0.92)";
+  }}
+  onTouchEnd={(e) => {
+    e.currentTarget.style.transform = "scale(1)";
+  }}
+>
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="white"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <polyline points="15 18 9 12 15 6" />
+  </svg>
+</button>
           <div>
             <div style={{ color: "white", fontWeight: 800, fontSize: "clamp(18px,2.2vw,26px)", letterSpacing: "-0.3px" }}>
               Print Queue
@@ -300,23 +331,46 @@ export default function MetadataPage() {
 
         {/* Continue to Print */}
         <button
-          onClick={(e) => { e.stopPropagation(); navigate("/print", { state: { job } }); }}
-          style={{
-            width: "100%", height: "58px", background: "white", border: "none",
-            borderRadius: "16px", color: "#7E49F2", fontSize: "17px", fontWeight: 800,
-            letterSpacing: "0.2px", cursor: "pointer", fontFamily: "'Sora', sans-serif",
-            boxShadow: "0 8px 28px rgba(0,0,0,0.18)",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-            transition: "transform 0.15s ease",
-          }}
-          onMouseDown={(e)  => { e.currentTarget.style.transform = "scale(0.97)"; }}
-          onMouseUp={(e)    => { e.currentTarget.style.transform = "scale(1)"; }}
-          onTouchStart={(e) => { e.currentTarget.style.transform = "scale(0.97)"; }}
-          onTouchEnd={(e)   => { e.currentTarget.style.transform = "scale(1)"; }}
-        >
-          <span>Continue to Print</span>
-          <span style={{ fontSize: "19px", lineHeight: 1 }}>🖨</span>
-        </button>
+  onClick={(e) => {
+    e.stopPropagation();
+    playTouch();
+    navigate("/print", { state: { job } });
+  }}
+  style={{
+    width: "100%",
+    height: "58px",
+    background: "white",
+    border: "none",
+    borderRadius: "9999px",
+    color: "#7E49F2",
+    fontSize: "17px",
+    fontWeight: 800,
+    letterSpacing: "0.2px",
+    cursor: "pointer",
+    fontFamily: "'Sora', sans-serif",
+    boxShadow: "0 8px 28px rgba(0,0,0,0.18)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    transition: "transform 0.15s ease",
+  }}
+  onMouseDown={(e) => {
+    e.currentTarget.style.transform = "scale(0.97)";
+  }}
+  onMouseUp={(e) => {
+    e.currentTarget.style.transform = "scale(1)";
+  }}
+  onTouchStart={(e) => {
+    e.currentTarget.style.transform = "scale(0.97)";
+  }}
+  onTouchEnd={(e) => {
+    e.currentTarget.style.transform = "scale(1)";
+  }}
+>
+  <span>Continue to Print</span>
+  <span style={{ fontSize: "19px", lineHeight: 1 }}>🖨</span>
+</button>
       </div>
 
       <style>{`

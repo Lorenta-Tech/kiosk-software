@@ -28,7 +28,11 @@ export default function OTPPage() {
 
   const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
   const date = now.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
-
+// Add this inside the component, before the return
+const playTouch = useCallback(() => {
+  const audio = new Audio("/music/touch.wav");
+  audio.play().catch(() => {});
+}, []);
   const submitOTP = useCallback(async (currentDigits: string[]) => {
     const otp = currentDigits.join("");
     setLoading(true);
@@ -61,7 +65,7 @@ export default function OTPPage() {
   const handleKey = useCallback(
     (key: string) => {
       if (loading || key === "") return;
-
+ playTouch();  // ← add here
       setPressedKey(key);
       setTimeout(() => setPressedKey(null), 130);
 
@@ -92,7 +96,7 @@ export default function OTPPage() {
         setActiveIdx((i) => Math.min(5, i + 1));
       }
     },
-    [activeIdx, loading, submitOTP]
+    [activeIdx, loading, submitOTP , playTouch]
   );
 
   // Physical keyboard support
@@ -139,7 +143,7 @@ export default function OTPPage() {
         flexShrink: 0,
       }}>
         <button
-          onClick={() => navigate("/")}
+       onClick={() => { playTouch(); navigate("/"); }}
           style={{
             background: "#ffffff",
             border: "none", borderRadius: "12px",

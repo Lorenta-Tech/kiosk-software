@@ -15,6 +15,7 @@ fn main() {
             commands::pdf_job::job_commands::download_pdf_url_commands,
 
             commands::print::print_commands::print_pdf_command,
+         commands::network::network_commands::check_internet,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri app");

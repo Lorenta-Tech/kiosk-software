@@ -177,17 +177,7 @@ export default function ThankYouPage() {
         animation: "riseUp 0.6s ease both",
         animationDelay: "0.65s",
       }}>
-        <div style={{
-          background: "rgba(255,255,255,0.10)",
-          border: "1.5px solid rgba(255,255,255,0.20)",
-          borderRadius: "100px",
-          padding: "10px 24px",
-          backdropFilter: "blur(12px)",
-          display: "flex", alignItems: "center", gap: "8px",
-        }}>
-          
         
-        </div>
       </div>
 
   

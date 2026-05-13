@@ -54,8 +54,6 @@ function parseError(raw: string): { fileName?: string; reason?: string; message:
 }
 
 // ── Alert Sound Hook ──────────────────────────────────────────────────────────
-// Plays /music/touch.wav in a loop while active=true.
-// Stops automatically when active becomes false.
 function useAlertSound(active: boolean) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -80,6 +78,53 @@ function useAlertSound(active: boolean) {
       }
     };
   }, [active]);
+}
+
+// ── Printer Disconnected Modal ────────────────────────────────────────────────
+function PrinterDisconnectedModal() {
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(55,18,165,0.72)",
+        backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 9999, padding: "24px", animation: "fadeIn 0.22s ease",
+      }}
+    >
+      <div
+        style={{
+          background: "white", borderRadius: "28px", padding: "36px 30px 32px",
+          maxWidth: "300px", width: "100%", textAlign: "center",
+          boxShadow: "0 32px 80px rgba(0,0,0,0.22)", fontFamily: "'Sora', sans-serif",
+          animation: "popIn 0.28s cubic-bezier(0.34,1.56,0.64,1) both",
+        }}
+      >
+        <div style={{ width: "76px", height: "76px", borderRadius: "50%", background: "#EEF0FE", border: "2px solid #7E49F2", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px" }}>
+          <i className="ti ti-printer-off" style={{ fontSize: "32px", color: "#7E49F2" }} aria-hidden="true" />
+        </div>
+        <div style={{ fontSize: "19px", fontWeight: 700, color: "#1a1a2e", marginBottom: "8px", letterSpacing: "-0.2px" }}>
+          Printer Not Connected
+        </div>
+        <div style={{ fontSize: "13px", color: "#888", lineHeight: 1.7, marginBottom: "24px" }}>
+          Please connect the printer. Printing will resume automatically once connected.
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", background: "#F3EFFE", borderRadius: "12px", padding: "12px 20px", marginBottom: "20px" }}>
+          <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#7E49F2", animation: "pulse 1.2s ease-in-out infinite" }} />
+          <span style={{ fontSize: "13px", color: "#7E49F2", fontWeight: 600 }}>Waiting for printer...</span>
+        </div>
+        <div style={{ height: "0.5px", background: "rgba(0,0,0,0.07)", marginBottom: "20px" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", background: "#FFF8EC", border: "1.5px solid #F2CB07", borderRadius: "16px", padding: "14px 16px", textAlign: "left" }}>
+          <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#FFF0CC", border: "1.5px solid #EF9F27", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <i className="ti ti-headset" style={{ fontSize: "18px", color: "#854F0B" }} aria-hidden="true" />
+          </div>
+          <div>
+            <div style={{ fontSize: "13px", fontWeight: 700, color: "#633806", marginBottom: "2px" }}>Please contact support</div>
+            <div style={{ fontSize: "11px", color: "#9a6c00", lineHeight: 1.5 }}>Show this screen to a staff member for assistance.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ── Centered Alert Modal ──────────────────────────────────────────────────────
@@ -310,13 +355,14 @@ export default function LoadingPage() {
   const [fileProgress, setFileProgress] = useState<FileProgress[]>(
     files.map((f: any) => ({ file_id: f.file_id, file_name: f.file_name, download_status: "pending", print_status: "pending" }))
   );
-  const [errorInfo, setErrorInfo]           = useState<ErrorInfo | null>(null);
-  const [printerAlert, setPrinterAlert]     = useState<AlertInfo | null>(null);
-  const [overallMessage, setOverallMessage] = useState("Preparing your documents…");
+  const [errorInfo, setErrorInfo]                       = useState<ErrorInfo | null>(null);
+  const [printerAlert, setPrinterAlert]                 = useState<AlertInfo | null>(null);
+  const [printerDisconnected, setPrinterDisconnected]   = useState(false);
+  const [overallMessage, setOverallMessage]             = useState("Preparing your documents…");
 
-  // ── Loop alert sound whenever a printer alert is showing ───────────────────
-  // When printerAlert becomes null (cleared/resolved), sound stops automatically
-  useAlertSound(printerAlert !== null);
+  // Sound plays whenever ANY blocking alert is active (hardware issues OR disconnected).
+  // It does NOT play for errorInfo — that's a terminal state, no sound needed.
+  useAlertSound(printerAlert !== null || printerDisconnected);
 
   const currentFileIdRef   = useRef<string | null>(null);
   const paperEmptyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -343,25 +389,68 @@ export default function LoadingPage() {
     throw new Error("unreachable");
   }
 
+  // ── Print with auto-retry on disconnect ───────────────────────────────────
+  // Flow on disconnect:
+  //   1. Rust detects USB gone → emits printer:disconnected → returns Err("disconnected…")
+  //   2. invoke() throws here → we show the modal and poll every 4 s
+  //   3. Once USB is back, Rust check_printer_ready() passes → invoke succeeds
+  //   4. On success we clear printerDisconnected → modal disappears automatically
   async function printFile(file: any, localPath: string) {
     currentFileIdRef.current = file.file_id;
-    updateFile(file.file_id, { print_status: "printing", print_pct: 0, print_current: 0, print_total: (file.number_of_pages ?? 1) * (file.copies ?? 1) });
-    try {
-      await invoke("print_pdf_command", {
-        pdfPath: localPath, fileName: file.file_name,
-        pages: file.number_of_pages ?? 1, copies: file.copies ?? 1,
-        colorMode: file.printing_mode === "color" ? "Color" : "Monochrome",
-        duplex: file.printing_side === "double_side",
-        pageRange: file.page_range?.[0] ?? null,
-        sessionId: job?.session_id,
-      });
-      updateFile(file.file_id, { print_status: "done", print_pct: 100, print_current: (file.number_of_pages ?? 1) * (file.copies ?? 1) });
-    } catch (err) {
-      updateFile(file.file_id, { print_status: "failed" });
-      throw new Error(`Failed to print "${file.file_name}": ${err}`);
-    } finally {
-      currentFileIdRef.current = null;
+    updateFile(file.file_id, {
+      print_status:  "printing",
+      print_pct:     0,
+      print_current: 0,
+      print_total:   (file.number_of_pages ?? 1) * (file.copies ?? 1),
+    });
+
+    while (true) {
+      try {
+        await invoke("print_pdf_command", {
+          pdfPath:   localPath,
+          fileName:  file.file_name,
+          pages:     file.number_of_pages ?? 1,
+          copies:    file.copies ?? 1,
+          colorMode: file.printing_mode === "color" ? "Color" : "Monochrome",
+          duplex:    file.printing_side === "double_side",
+          pageRange: file.page_range?.[0] ?? null,
+          sessionId: job?.session_id,
+        });
+
+        // ── Success: clear disconnect modal and finish ─────────────────────
+        setPrinterDisconnected(false);
+        updateFile(file.file_id, {
+          print_status:  "done",
+          print_pct:     100,
+          print_current: (file.number_of_pages ?? 1) * (file.copies ?? 1),
+        });
+        break;
+
+      } catch (err: any) {
+        const msg = (err?.message || String(err)).toLowerCase();
+
+        // ── Disconnect / not found → show modal, wait 4 s, retry ─────────
+        if (
+          msg.includes("not connected")           ||
+          msg.includes("disconnected")            ||
+          msg.includes("not found")               ||
+          msg.includes("canon printer not found") ||
+          (msg.includes("please contact staff") && msg.includes("connect"))
+        ) {
+          setPrinterDisconnected(true);
+          await new Promise((r) => setTimeout(r, 4000));
+          continue; // ← loop back and retry invoke
+        }
+
+        // ── Any other error: clear disconnect modal, propagate as fatal ───
+        setPrinterDisconnected(false);
+        updateFile(file.file_id, { print_status: "failed" });
+        currentFileIdRef.current = null;
+        throw new Error(`Failed to print "${file.file_name}": ${err}`);
+      }
     }
+
+    currentFileIdRef.current = null;
   }
 
   const hasStarted = useRef(false);
@@ -408,10 +497,16 @@ export default function LoadingPage() {
     listen<{ current: number; total: number; pct: number }>("printer:page_progress", ({ payload }) => {
       const id = currentFileIdRef.current;
       if (!id) return;
-      setFileProgress((prev) => prev.map((fp) => fp.file_id === id ? { ...fp, print_pct: payload.pct, print_current: payload.current, print_total: payload.total } : fp));
+      setFileProgress((prev) =>
+        prev.map((fp) =>
+          fp.file_id === id
+            ? { ...fp, print_pct: payload.pct, print_current: payload.current, print_total: payload.total }
+            : fp
+        )
+      );
     }).then((fn) => unlisten.push(fn));
 
-    // Paper empty — 5-min escalation timer + sound starts looping
+    // Paper empty — 5-min escalation timer
     listen("printer:paper_empty", () => {
       setPrinterAlert({ icon: "ti-file-x", title: "Paper tray is empty", message: "Please refill the paper tray to continue printing." });
       if (paperEmptyTimerRef.current) clearTimeout(paperEmptyTimerRef.current);
@@ -421,41 +516,47 @@ export default function LoadingPage() {
       }, 5 * 60 * 1000);
     }).then((fn) => unlisten.push(fn));
 
-    // Other alert banners — sound starts looping on any of these
+    // Other alert banners
     const bannerEvents: [string, string, string, string][] = [
-      ["printer:paper_jam",   "ti-alert-triangle", "Paper jam detected",  "Please clear the jam and printing will resume."],
-      ["printer:ink_empty",   "ti-droplet-off",    "Ink cartridge empty", "Please replace the cartridge to continue."],
-      ["printer:ink_low",     "ti-droplet-half-2", "Ink level is low",    "Printing continues — please replace the cartridge soon."],
+      ["printer:paper_jam", "ti-alert-triangle", "Paper jam detected",  "Please clear the jam and printing will resume."],
+      ["printer:ink_empty", "ti-droplet-off",    "Ink cartridge empty", "Please replace the cartridge to continue."],
+      ["printer:ink_low",   "ti-droplet-half-2", "Ink level is low",    "Printing continues — please replace the cartridge soon."],
     ];
     bannerEvents.forEach(([event, icon, title, message]) => {
       listen(event, () => setPrinterAlert({ icon, title, message })).then((fn) => unlisten.push(fn));
     });
 
-    // Cleared events — setPrinterAlert(null) stops the sound automatically
+    // Cleared events — dismiss alert, stop sound
     const clearedEvents = ["printer:paper_refilled", "printer:jam_cleared", "printer:ink_replaced"];
     clearedEvents.forEach((event) => {
       listen(event, () => {
-        if (paperEmptyTimerRef.current) { clearTimeout(paperEmptyTimerRef.current); paperEmptyTimerRef.current = null; }
-        setPrinterAlert(null); // ← sound stops here
+        if (paperEmptyTimerRef.current) {
+          clearTimeout(paperEmptyTimerRef.current);
+          paperEmptyTimerRef.current = null;
+        }
+        setPrinterAlert(null);
       }).then((fn) => unlisten.push(fn));
     });
 
-    // Timeout — silent dismiss, no error modal
+    // Timeout — silent dismiss
     listen("printer:timeout", () => {
-      setPrinterAlert(null); // ← sound stops here too
+      setPrinterAlert(null);
     }).then((fn) => unlisten.push(fn));
 
-    // Fatal events
-    const fatalEvents: [string, string][] = [
-      ["printer:disconnected", "Printer was disconnected. Please contact staff."],
-      ["printer:failed",       "A printer error occurred. Please contact staff."],
-    ];
-    fatalEvents.forEach(([event, msg]) => {
-      listen(event, () => {
-        setPrinterAlert(null); // ← stop sound
-        setErrorInfo(parseError(msg));
-      }).then((fn) => unlisten.push(fn));
-    });
+    // ── printer:disconnected — DO NOT set errorInfo here.
+    // The printFile retry loop owns the disconnect recovery.
+    // This event just ensures the modal is visible if somehow
+    // the event fires before the catch block runs.
+    listen("printer:disconnected", () => {
+      setPrinterDisconnected(true);
+    }).then((fn) => unlisten.push(fn));
+
+    // printer:failed — truly fatal hardware error (not a disconnect)
+    listen<string>("printer:failed", ({ payload }) => {
+      setPrinterAlert(null);
+      setPrinterDisconnected(false);
+      setErrorInfo(parseError(payload || "A printer error occurred. Please contact staff."));
+    }).then((fn) => unlisten.push(fn));
 
     return () => {
       unlisten.forEach((fn) => fn());
@@ -505,7 +606,11 @@ export default function LoadingPage() {
 
       <div style={{ color: "white", fontWeight: 700, fontSize: "clamp(15px,2vw,19px)", letterSpacing: "-0.2px", textAlign: "center", marginBottom: "3px", padding: "0 24px" }}>{overallMessage}</div>
       <div style={{ color: "rgba(255,255,255,0.48)", fontSize: "12px", fontWeight: 500, textAlign: "center", marginBottom: "22px" }}>
-        {phase === "downloading" ? `${downloadedCount} / ${total} files downloaded` : printingFile?.print_pct !== undefined ? `${printedCount} / ${total} files · current: ${printingFile.print_pct}%` : `${printedCount} / ${total} files printed`}
+        {phase === "downloading"
+          ? `${downloadedCount} / ${total} files downloaded`
+          : printingFile?.print_pct !== undefined
+            ? `${printedCount} / ${total} files · current: ${printingFile.print_pct}%`
+            : `${printedCount} / ${total} files printed`}
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", width: "100%", padding: "0 clamp(22px,4vw,48px) 12px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -514,12 +619,29 @@ export default function LoadingPage() {
         ))}
       </div>
 
-      <BottomProgressBar phase={phase} progressPct={progressPct} downloadedCount={downloadedCount} printedCount={printedCount} total={total} printingFile={printingFile} />
+      <BottomProgressBar
+        phase={phase}
+        progressPct={progressPct}
+        downloadedCount={downloadedCount}
+        printedCount={printedCount}
+        total={total}
+        printingFile={printingFile}
+      />
 
-      {printerAlert && <AlertModal alert={printerAlert} />}
-
-      {errorInfo && (
-        <ErrorModal error={errorInfo} phase={phase} onDismiss={() => { setErrorInfo(null); navigate(-1); }} />
+      {/*
+        Modal priority (only one shows at a time):
+          1. printerDisconnected  — mid-print USB loss, retry in progress
+          2. printerAlert         — paper/jam/ink warnings (printer still connected)
+          3. errorInfo            — terminal failure, no auto-recovery
+      */}
+      {printerDisconnected && <PrinterDisconnectedModal />}
+      {!printerDisconnected && printerAlert && <AlertModal alert={printerAlert} />}
+      {!printerDisconnected && !printerAlert && errorInfo && (
+        <ErrorModal
+          error={errorInfo}
+          phase={phase}
+          onDismiss={() => { setErrorInfo(null); navigate(-1); }}
+        />
       )}
 
       <style>{`

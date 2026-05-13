@@ -12,10 +12,10 @@ use crate::services::expire_session::expire::expire_session;
 use crate::services::server::printer_event_service::notify_printer_event;
 
 
-const MEDIA:                  &str = "A4";
-const JOB_POLL_SECS:          u64  = 3;
-const JOB_TIMEOUT_SECS:       u64  = 300;
-const STALL_POLLS_BEFORE_PROBE: u32 = 3;
+const MEDIA:                    &str = "A4";
+const JOB_POLL_SECS:            u64  = 3;
+const JOB_TIMEOUT_SECS:         u64  = 300;
+const STALL_POLLS_BEFORE_PROBE: u32  = 3;
 
 // ── Job metadata passed in from the command layer ────────────────────────────
 pub struct PrintJobMeta<'a> {
@@ -101,16 +101,32 @@ pub fn send_print_job(app: &AppHandle, pdf_path: &str, meta: &PrintJobMeta) -> R
             println!("✅ Print job submitted — Job ID : {job_id}");
             println!("   Waiting for {} page(s) × {} cop(ies)…", meta.pages, meta.copies);
             let _ = app.emit("printer:started", job_id);
-            notify(job_id as u32, "started", meta.session_id);  // ← session_id
+            notify(job_id as u32, "started", meta.session_id);
 
             let result = wait_for_job(app, job_id as u32, meta);
-            delete_pdf(pdf_path);
+
+            // ── Only delete PDF on SUCCESS or non-disconnect errors ────────────
+            // On disconnect we return an Err containing "disconnected" so the
+            // frontend can retry — the PDF must still exist for the retry.
+            match &result {
+                Ok(_) => {
+                    delete_pdf(pdf_path); // ← success: clean up
+                }
+                Err(e) if e.to_lowercase().contains("disconnected") => {
+                    println!("⚠️  Keeping PDF for retry after disconnect: {}", pdf_path);
+                    // do NOT delete — frontend will retry printFile with same path
+                }
+                Err(_) => {
+                    delete_pdf(pdf_path); // ← other errors: clean up
+                }
+            }
+
             result
         }
         Err(e) => {
             println!("❌ Failed to submit print job: {:?}", e);
             let _ = app.emit("printer:failed", format!("{:?}", e));
-            notify(0, "submit_failed", meta.session_id);  // ← session_id
+            notify(0, "submit_failed", meta.session_id);
             delete_pdf(pdf_path);
             Err(format!("Failed to submit print job: {:?}", e))
         }
@@ -175,12 +191,13 @@ fn wait_for_job(app: &AppHandle, job_id: u32, meta: &PrintJobMeta) -> Result<(),
         if active_elapsed!() > Duration::from_secs(JOB_TIMEOUT_SECS) {
             println!("⏰ Print job timed out (job {})", job_id);
             let _ = app.emit("printer:timeout", ());
-            notify(job_id, "timeout", meta.session_id);  // ← session_id
+            notify(job_id, "timeout", meta.session_id);
             return Err("Print job timed out. Please contact staff.".into());
         }
 
-       
-  
+       // ── Drop this block into wait_for_job, replacing the existing spawn ──────────
+// Nothing else in printer_service.rs changes.
+
 if !job_exists(job_id) {
     println!("Print job {} completed [{} page(s) × {} cop(ies)]",
         job_id, meta.pages, meta.copies);
@@ -192,20 +209,23 @@ if !job_exists(job_id) {
     let _ = app.emit("printer:completed", job_id);
     notify(job_id, "completed", meta.session_id);
 
-  
+    // Spawn session expiry with retry — survives temporary network loss
     let session_owned = meta.session_id.to_string();
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = expire_session(&session_owned).await {
-            println!("Failed to expire session: {}", e);
+        println!("🔄 Starting session expiry for {} (will retry on network failure)", session_owned);
+        match expire_session(&session_owned).await {
+            Ok(_) => println!("✅ Session {} expired", session_owned),
+            Err(e) => println!("❌ Could not expire session {}: {}", session_owned, e),
         }
     });
 
     return Ok(());
 }
+
         if !is_usb_present() {
-            println!(" Printer unplugged during job {}!", job_id);
+            println!("⚠️  Printer unplugged during job {}!", job_id);
             let _ = app.emit("printer:disconnected", ());
-            notify(job_id, "disconnected", meta.session_id);  // ← session_id
+            notify(job_id, "disconnected", meta.session_id);
             return Err("Printer was disconnected. Please contact staff.".into());
         }
 
@@ -300,7 +320,7 @@ if !job_exists(job_id) {
             if !notified_paper_jam {
                 println!("🚨 Paper jam detected (job {})", job_id);
                 let _ = app.emit("printer:paper_jam", ());
-                notify(job_id, "paper_jam", meta.session_id);  // ← session_id
+                notify(job_id, "paper_jam", meta.session_id);
                 notified_paper_jam = true;
             }
             std::thread::sleep(Duration::from_secs(JOB_POLL_SECS));
@@ -310,7 +330,7 @@ if !job_exists(job_id) {
             if should_stall_probe {
                 println!("✅ Paper jam cleared (job {})", job_id);
                 let _ = app.emit("printer:jam_cleared", ());
-                notify(job_id, "jam_cleared", meta.session_id);  // ← session_id
+                notify(job_id, "jam_cleared", meta.session_id);
                 notified_paper_jam = false;
                 stall_polls = 0;
             } else {
@@ -324,7 +344,7 @@ if !job_exists(job_id) {
             if !notified_paper_empty {
                 println!("📭 Paper tray empty (job {})", job_id);
                 let _ = app.emit("printer:paper_empty", ());
-                notify(job_id, "paper_empty", meta.session_id);  // ← session_id
+                notify(job_id, "paper_empty", meta.session_id);
                 notified_paper_empty = true;
             }
             std::thread::sleep(Duration::from_secs(JOB_POLL_SECS));
@@ -334,7 +354,7 @@ if !job_exists(job_id) {
             if should_stall_probe {
                 println!("✅ Paper refilled — resuming (job {})", job_id);
                 let _ = app.emit("printer:paper_refilled", ());
-                notify(job_id, "paper_refilled", meta.session_id);  // ← session_id
+                notify(job_id, "paper_refilled", meta.session_id);
                 notified_paper_empty = false;
                 stall_polls = 0;
             } else {
@@ -348,7 +368,7 @@ if !job_exists(job_id) {
             if !notified_ink_empty {
                 println!("🖊️  Ink empty (job {})", job_id);
                 let _ = app.emit("printer:ink_empty", ());
-                notify(job_id, "ink_empty", meta.session_id);  // ← session_id
+                notify(job_id, "ink_empty", meta.session_id);
                 notified_ink_empty = true;
             }
             std::thread::sleep(Duration::from_secs(JOB_POLL_SECS));
@@ -358,7 +378,7 @@ if !job_exists(job_id) {
             if should_stall_probe {
                 println!("✅ Ink replaced — resuming (job {})", job_id);
                 let _ = app.emit("printer:ink_replaced", ());
-                notify(job_id, "ink_replaced", meta.session_id);  // ← session_id
+                notify(job_id, "ink_replaced", meta.session_id);
                 notified_ink_empty = false;
                 stall_polls = 0;
             } else {
@@ -377,7 +397,7 @@ if !job_exists(job_id) {
             if has_ink_low {
                 println!("⚠️  Ink low — printing continues (job {})", job_id);
                 let _ = app.emit("printer:ink_low", ());
-                notify(job_id, "ink_low", meta.session_id);  // ← session_id
+                notify(job_id, "ink_low", meta.session_id);
                 notified_ink_low = true;
             }
         }
@@ -649,7 +669,7 @@ fn job_exists(job_id: u32) -> bool {
 
 fn delete_pdf(path: &str) {
     match fs::remove_file(path) {
-        Ok(_)  => println!(" PDF deleted: {}", path),
-        Err(e) => println!(" Could not delete PDF {}: {}", path, e),
+        Ok(_)  => println!("🗑️  PDF deleted: {}", path),
+        Err(e) => println!("⚠️  Could not delete PDF {}: {}", path, e),
     }
 }

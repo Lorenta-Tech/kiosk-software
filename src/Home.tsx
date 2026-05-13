@@ -106,6 +106,7 @@ export default function Home() {
           Start Now
         </button>
       </div>
+ 
     </div>
   );
 }

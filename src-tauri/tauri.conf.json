@@ -14,21 +14,27 @@
 
   "app": {
     "windows": [
-{
-  "title": "kiosk-engg",
+      {
+        "title": "kiosk-engg",
 
-  "width": 900,
-  "height": 1700,
+        "width": 1080,
+        "height": 1920,
 
-  "fullscreen": true,
-  "resizable": false,
-  "decorations": false,
-  "alwaysOnTop": true,
-  "skipTaskbar": true,
-  "visible": true,
-  "focus": true,
-  "center": true
-}
+        "minWidth": 1080,
+        "minHeight": 1920,
+
+        "maxWidth": 1080,
+        "maxHeight": 1920,
+
+        "fullscreen": true,
+        "resizable": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": true,
+        "focus": true,
+        "center": true
+      }
     ],
 
     "security": {

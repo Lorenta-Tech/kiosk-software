@@ -119,7 +119,8 @@ const playTouch = () => {
     setSecsLeft(60);
     setTimerWarning(false);
   }, []);
-
+console.log(secsLeft);
+console.log(timerWarning);
   useEffect(() => {
     const t = setInterval(() => {
       setSecsLeft((prev) => {

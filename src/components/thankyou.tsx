@@ -5,23 +5,21 @@ export default function ThankYouPage() {
   const navigate = useNavigate();
   const [tick, setTick] = useState(0);
 
-  // Redirect to home after 3 seconds
-  useEffect(() => {
-    const timer = setTimeout(() => navigate("/"), 3000);
-    return () => clearTimeout(timer);
-  }, [navigate]);
+ useEffect(() => {
+  const timer = setTimeout(() => navigate("/"), 3000);
+  return () => clearTimeout(timer);
+}, [navigate]);
 
-  // Tick for countdown ring animation
   useEffect(() => {
     const t = setInterval(() => setTick((p) => p + 1), 50);
     return () => clearInterval(t);
   }, []);
 
-  // SVG ring: circumference for a r=22 circle
+
   const CIRCUM = 2 * Math.PI * 22; // ~138.2
   const elapsed = Math.min(tick * 50, 3000);
   const dashOffset = CIRCUM * (1 - elapsed / 3000);
-
+console.log(dashOffset);
   return (
     <div style={{
       width: "100vw", height: "100vh",

@@ -201,7 +201,7 @@ const playTouch = useCallback(() => {
               margin: "0 auto 16px",
               fontSize: "28px",
             }}>
-              <img src="../../public/lorenta.png" alt="logo" />
+              <img src="../../lorenta.png" alt="logo" />
             </div>
             <h1 style={{
               color: "white", fontSize: "clamp(20px,3vw,28px)",

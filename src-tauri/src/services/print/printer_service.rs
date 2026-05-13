@@ -24,7 +24,8 @@ pub struct PrintJobMeta<'a> {
     pub copies:     u32,
     pub color_mode: &'a str,
     pub duplex:     bool,
-    pub page_range: Option<&'a str>,  // e.g. "1-3" or None for all pages
+    pub page_range: Option<&'a str>, 
+    pub pages_per_sheet: Option<&'a str>, 
     pub session_id: &'a str,
 }
 
@@ -83,10 +84,20 @@ pub fn send_print_job(app: &AppHandle, pdf_path: &str, meta: &PrintJobMeta) -> R
         ("collate",          "true".to_string()),
     ];
 
-    if let Some(range) = meta.page_range {
-        println!("   Applying page-ranges: {}", range);
-        props.push(("page-ranges", range.to_string()));
+  if let Some(nup) = meta.pages_per_sheet {
+    if nup.trim() == "2" {
+        println!("   Applying 2-up layout");
+        props.push(("number-up",          "2".to_string()));
+        props.push(("orientation-requested", "4".to_string())); // 4 = landscape
+        props.push(("number-up-layout",   "lrtb".to_string())); // left→right, top→bottom
     }
+}
+
+
+if let Some(range) = meta.page_range {
+    println!("   Applying page-ranges: {}", range);
+    props.push(("page-ranges", range.to_string()));
+}
 
     let props_ref: Vec<(&str, &str)> = props.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
@@ -604,13 +615,16 @@ fn parse_alerts(status: &str) -> Vec<String> {
 }
 
 fn blocking_error_message(status: &str) -> Option<String> {
-    if status.to_lowercase().contains("disabled") {
+    // ── Extract only the Canon printer's section ──────────────────────────
+    let canon_section = extract_canon_section(status);
+    let lower = canon_section.to_lowercase();
+
+    if lower.contains("disabled") {
         return Some("Printer is disabled. Please contact staff.".into());
     }
 
-    let alerts = parse_alerts(status);
-    let lower  = status.to_lowercase();
-
+    let alerts = parse_alerts(status); // already Canon-scoped
+    
     let paper_empty = alerts.iter().any(|a| {
             a.contains("media-empty") || a.contains("media-needed") || a.contains("media-low")
         })
@@ -640,6 +654,25 @@ fn blocking_error_message(status: &str) -> Option<String> {
     None
 }
 
+/// Extract the lpstat block that belongs to the Canon printer only.
+/// lpstat -p -l groups per-printer: each "printer <name> ..." line starts
+/// a new block; we grab from the Canon line until the next "printer " line.
+fn extract_canon_section(status: &str) -> String {
+    let mut in_canon = false;
+    let mut lines: Vec<&str> = Vec::new();
+
+    for line in status.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("printer ") {
+            in_canon = trimmed.to_lowercase().contains("canon");
+        }
+        if in_canon {
+            lines.push(line);
+        }
+    }
+
+    lines.join("\n")
+}
 fn is_usb_present() -> bool {
     Command::new("lsusb")
         .output()

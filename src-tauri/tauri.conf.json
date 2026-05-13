@@ -35,7 +35,8 @@
 
         "visible": true,
 
-        "focus": true
+        "focus": true,
+        "devtools": true
       }
     ],
 

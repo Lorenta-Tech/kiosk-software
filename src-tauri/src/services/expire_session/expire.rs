@@ -1,10 +1,10 @@
 use reqwest::Client;
 use std::time::Duration;
 
+const API_BASE_URL: &str = "https://kiosk-server-production.duckdns.org";
 const INITIAL_DELAY: u64 = 3;
 const MAX_DELAY: u64 = 60;
 
-/// Async sleep compatible with Tauri runtime
 async fn async_std_sleep(secs: u64) {
     let (tx, rx) = std::sync::mpsc::channel::<()>();
 
@@ -20,12 +20,8 @@ async fn async_std_sleep(secs: u64) {
     .unwrap_or(());
 }
 
-/// Retry forever until session expires successfully
 pub async fn expire_session(session_id: &str) -> Result<(), String> {
-    let base_url = std::env::var("API_BASE_URL")
-        .map_err(|_| "API_BASE_URL not set".to_string())?;
-
-    let url = format!("{}/print/jobs/expire", base_url);
+    let url = format!("{}/print/jobs/expire", API_BASE_URL);
 
     let client = Client::builder()
         .timeout(Duration::from_secs(15))
@@ -36,10 +32,7 @@ pub async fn expire_session(session_id: &str) -> Result<(), String> {
     let mut attempt: u64 = 1;
 
     loop {
-        println!(
-            "⏳ Expiring session {} (attempt #{})",
-            session_id, attempt
-        );
+        println!("⏳ Expiring session {} (attempt #{})", session_id, attempt);
 
         let result = client
             .post(&url)
@@ -58,44 +51,25 @@ pub async fn expire_session(session_id: &str) -> Result<(), String> {
             Ok(resp) => {
                 let status = resp.status();
 
-                // Optional:
-                // Stop retrying for 4xx errors except timeout/rate-limit
                 if status.is_client_error()
                     && status.as_u16() != 408
                     && status.as_u16() != 429
                 {
                     let body = resp.text().await.unwrap_or_default();
-
-                    println!(
-                        "❌ Server rejected request permanently ({}): {}",
-                        status, body
-                    );
-
-                    return Err(format!(
-                        "Permanent failure while expiring session: {}",
-                        status
-                    ));
+                    println!("❌ Server rejected request permanently ({}): {}", status, body);
+                    return Err(format!("Permanent failure while expiring session: {}", status));
                 }
 
-                println!(
-                    "⚠️ Server error {} on attempt #{} — retrying in {}s",
-                    status, attempt, delay_secs
-                );
+                println!("⚠️ Server error {} on attempt #{} — retrying in {}s", status, attempt, delay_secs);
             }
 
             Err(e) => {
-                println!(
-                    "⚠️ Network error on attempt #{}: {} — retrying in {}s",
-                    attempt, e, delay_secs
-                );
+                println!("⚠️ Network error on attempt #{}: {} — retrying in {}s", attempt, e, delay_secs);
             }
         }
 
         async_std_sleep(delay_secs).await;
-
-        // Exponential backoff capped at MAX_DELAY
         delay_secs = (delay_secs * 2).min(MAX_DELAY);
-
         attempt += 1;
     }
 }

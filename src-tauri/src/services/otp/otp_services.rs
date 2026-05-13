@@ -1,11 +1,10 @@
 use crate::modules::job::token_job_response::TokenJobResponse;
 use serde_json::json;
 
-pub async fn verify_otp(token: i32) -> Result<TokenJobResponse, String> {
-    let base_url = std::env::var("API_BASE_URL")
-        .map_err(|_| "API_BASE_URL not set in .env".to_string())?;
+const API_BASE_URL: &str = "https://kiosk-server-production.duckdns.org";
 
-    let url = format!("{}/print/jobs/token", base_url);
+pub async fn verify_otp(token: i32) -> Result<TokenJobResponse, String> {
+    let url = format!("{}/print/jobs/token", API_BASE_URL);
 
     println!("Sending POST to: {}", url);
     println!("Token Payload: {}", token);
@@ -23,7 +22,7 @@ pub async fn verify_otp(token: i32) -> Result<TokenJobResponse, String> {
     let body = response.text().await.unwrap_or_default();
 
     println!("Status: {}", status);
-    println!(" Response Body: {}", body);
+    println!("Response Body: {}", body);
 
     if !status.is_success() {
         return Err(format!("Invalid Token: {}", body));

@@ -1,13 +1,12 @@
 use serde_json::json;
 use reqwest::Client;
 
+const API_BASE_URL: &str = "https://kiosk-server-production.duckdns.org";
+
 pub async fn notify_printer_event(job_id: u32, event: &str, session_id: &str) -> Result<(), String> {
-    let base_url = std::env::var("API_BASE_URL")
-        .map_err(|_| "API_BASE_URL not set".to_string())?;
+    let url = format!("{}/print/jobs/error", API_BASE_URL);
 
-    let url = format!("{}/print/jobs/error", base_url);
-
-    println!(" Notifying backend event: '{}' | job_id: {}", event, job_id);
+    println!("Notifying backend event: '{}' | job_id: {}", event, job_id);
 
     let error_code = match event {
         "paper_empty" => Some("paper_out_of_bounds"),
@@ -17,7 +16,7 @@ pub async fn notify_printer_event(job_id: u32, event: &str, session_id: &str) ->
     };
 
     let Some(error_code) = error_code else {
-        println!(" Event '{}' is not an error — skipping backend notify", event);
+        println!("Event '{}' is not an error — skipping backend notify", event);
         return Ok(());
     };
 
@@ -26,7 +25,7 @@ pub async fn notify_printer_event(job_id: u32, event: &str, session_id: &str) ->
         .post(&url)
         .json(&json!({
             "error":      error_code,
-            "session_id": session_id,  // ← added
+            "session_id": session_id,
         }))
         .send()
         .await

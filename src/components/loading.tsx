@@ -53,6 +53,24 @@ function parseError(raw: string): { fileName?: string; reason?: string; message:
   return { message: raw };
 }
 
+// ── Compute sheets for progress bar ──────────────────────────────────────────
+// page_layout: 1 = normal, 2 = 2-up (2 pages per sheet)
+function computeSheets(file: any): number {
+  const layout   = file.page_layout === 2 ? 2 : 1;
+  const copies   = file.copies ?? 1;
+  const range    = file.page_range?.[0] as string | undefined;
+
+  let pageCount: number;
+  if (range) {
+    const [start, end] = range.split("-").map(Number);
+    pageCount = isNaN(end) ? 1 : Math.max(1, end - start + 1);
+  } else {
+    pageCount = file.number_of_pages ?? 1;
+  }
+
+  return Math.ceil(pageCount / layout) * copies;
+}
+
 // ── Alert Sound Hook ──────────────────────────────────────────────────────────
 function useAlertSound(active: boolean) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -83,31 +101,13 @@ function useAlertSound(active: boolean) {
 // ── Printer Disconnected Modal ────────────────────────────────────────────────
 function PrinterDisconnectedModal() {
   return (
-    <div
-      style={{
-        position: "fixed", inset: 0, background: "rgba(55,18,165,0.72)",
-        backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 9999, padding: "24px", animation: "fadeIn 0.22s ease",
-      }}
-    >
-      <div
-        style={{
-          background: "white", borderRadius: "28px", padding: "36px 30px 32px",
-          maxWidth: "300px", width: "100%", textAlign: "center",
-          boxShadow: "0 32px 80px rgba(0,0,0,0.22)", fontFamily: "'Sora', sans-serif",
-          animation: "popIn 0.28s cubic-bezier(0.34,1.56,0.64,1) both",
-        }}
-      >
+    <div style={{ position: "fixed", inset: 0, background: "rgba(55,18,165,0.72)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "24px", animation: "fadeIn 0.22s ease" }}>
+      <div style={{ background: "white", borderRadius: "28px", padding: "36px 30px 32px", maxWidth: "300px", width: "100%", textAlign: "center", boxShadow: "0 32px 80px rgba(0,0,0,0.22)", fontFamily: "'Sora', sans-serif", animation: "popIn 0.28s cubic-bezier(0.34,1.56,0.64,1) both" }}>
         <div style={{ width: "76px", height: "76px", borderRadius: "50%", background: "#EEF0FE", border: "2px solid #7E49F2", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px" }}>
           <i className="ti ti-printer-off" style={{ fontSize: "32px", color: "#7E49F2" }} aria-hidden="true" />
         </div>
-        <div style={{ fontSize: "19px", fontWeight: 700, color: "#1a1a2e", marginBottom: "8px", letterSpacing: "-0.2px" }}>
-          Printer Not Connected
-        </div>
-        <div style={{ fontSize: "13px", color: "#888", lineHeight: 1.7, marginBottom: "24px" }}>
-          Please connect the printer. Printing will resume automatically once connected.
-        </div>
+        <div style={{ fontSize: "19px", fontWeight: 700, color: "#1a1a2e", marginBottom: "8px", letterSpacing: "-0.2px" }}>Printer Not Connected</div>
+        <div style={{ fontSize: "13px", color: "#888", lineHeight: 1.7, marginBottom: "24px" }}>Please connect the printer. Printing will resume automatically once connected.</div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", background: "#F3EFFE", borderRadius: "12px", padding: "12px 20px", marginBottom: "20px" }}>
           <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#7E49F2", animation: "pulse 1.2s ease-in-out infinite" }} />
           <span style={{ fontSize: "13px", color: "#7E49F2", fontWeight: 600 }}>Waiting for printer...</span>
@@ -130,31 +130,13 @@ function PrinterDisconnectedModal() {
 // ── Centered Alert Modal ──────────────────────────────────────────────────────
 function AlertModal({ alert }: { alert: AlertInfo }) {
   return (
-    <div
-      style={{
-        position: "fixed", inset: 0, background: "rgba(55,18,165,0.72)",
-        backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 9999, padding: "24px", animation: "fadeIn 0.22s ease",
-      }}
-    >
-      <div
-        style={{
-          background: "white", borderRadius: "28px", padding: "36px 30px 32px",
-          maxWidth: "300px", width: "100%", textAlign: "center",
-          boxShadow: "0 32px 80px rgba(0,0,0,0.22)", fontFamily: "'Sora', sans-serif",
-          animation: "popIn 0.28s cubic-bezier(0.34,1.56,0.64,1) both",
-        }}
-      >
+    <div style={{ position: "fixed", inset: 0, background: "rgba(55,18,165,0.72)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "24px", animation: "fadeIn 0.22s ease" }}>
+      <div style={{ background: "white", borderRadius: "28px", padding: "36px 30px 32px", maxWidth: "300px", width: "100%", textAlign: "center", boxShadow: "0 32px 80px rgba(0,0,0,0.22)", fontFamily: "'Sora', sans-serif", animation: "popIn 0.28s cubic-bezier(0.34,1.56,0.64,1) both" }}>
         <div style={{ width: "76px", height: "76px", borderRadius: "50%", background: "#EEF0FE", border: "2px solid #7E49F2", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px" }}>
           <i className={`ti ${alert.icon}`} style={{ fontSize: "32px", color: "#7E49F2" }} aria-hidden="true" />
         </div>
-        <div style={{ fontSize: "19px", fontWeight: 700, color: "#1a1a2e", marginBottom: "8px", letterSpacing: "-0.2px" }}>
-          {alert.title}
-        </div>
-        <div style={{ fontSize: "13px", color: "#888", lineHeight: 1.7, marginBottom: "24px" }}>
-          {alert.message}
-        </div>
+        <div style={{ fontSize: "19px", fontWeight: 700, color: "#1a1a2e", marginBottom: "8px", letterSpacing: "-0.2px" }}>{alert.title}</div>
+        <div style={{ fontSize: "13px", color: "#888", lineHeight: 1.7, marginBottom: "24px" }}>{alert.message}</div>
         <div style={{ height: "0.5px", background: "rgba(0,0,0,0.07)", marginBottom: "20px" }} />
         <div style={{ display: "flex", alignItems: "center", gap: "12px", background: "#FFF8EC", border: "1.5px solid #F2CB07", borderRadius: "16px", padding: "14px 16px", textAlign: "left" }}>
           <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#FFF0CC", border: "1.5px solid #EF9F27", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -189,25 +171,17 @@ function ErrorModal({ error, onDismiss, phase }: { error: ErrorInfo; onDismiss: 
           <i className={`ti ${iconClass}`} style={{ fontSize: "32px", color: "#A32D2D" }} aria-hidden="true" />
         </div>
         <div style={{ fontSize: "19px", fontWeight: 700, color: "#1a1a2e", marginBottom: "8px" }}>Something went wrong</div>
-
         {error.fileName && (
           <div style={{ background: "#F7F7FA", border: "1px solid #E8E8F0", borderRadius: "14px", padding: "12px 16px", marginBottom: "14px", textAlign: "left" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-              <div style={{ background: extStyle.bg, border: `1.5px solid ${extStyle.border}`, borderRadius: "6px", padding: "2px 7px", fontSize: "9px", fontWeight: 800, color: extStyle.text, letterSpacing: "0.6px", textTransform: "uppercase", flexShrink: 0 }}>
-                {ext || "FILE"}
-              </div>
-              <div style={{ fontSize: "12px", fontWeight: 700, color: "#333", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-                {error.fileName}
-              </div>
+              <div style={{ background: extStyle.bg, border: `1.5px solid ${extStyle.border}`, borderRadius: "6px", padding: "2px 7px", fontSize: "9px", fontWeight: 800, color: extStyle.text, letterSpacing: "0.6px", textTransform: "uppercase", flexShrink: 0 }}>{ext || "FILE"}</div>
+              <div style={{ fontSize: "12px", fontWeight: 700, color: "#333", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{error.fileName}</div>
             </div>
             {error.reason && <div style={{ fontSize: "12px", color: "#555", lineHeight: 1.55 }}><span style={{ fontWeight: 700, color: "#A32D2D" }}>{error.reason}</span></div>}
           </div>
         )}
-
         {!error.fileName && <div style={{ color: "#666", fontSize: "13px", lineHeight: 1.6, marginBottom: "14px" }}>{error.message}</div>}
-
         <div style={{ height: "0.5px", background: "rgba(0,0,0,0.07)", marginBottom: "20px" }} />
-
         <div style={{ display: "flex", alignItems: "center", gap: "12px", background: "#FFF8EC", border: "1.5px solid #F2CB07", borderRadius: "16px", padding: "14px 16px", textAlign: "left", marginBottom: phase !== "printing" ? "20px" : "0" }}>
           <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#FFF0CC", border: "1.5px solid #EF9F27", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <i className="ti ti-headset" style={{ fontSize: "18px", color: "#854F0B" }} aria-hidden="true" />
@@ -217,7 +191,6 @@ function ErrorModal({ error, onDismiss, phase }: { error: ErrorInfo; onDismiss: 
             <div style={{ fontSize: "11px", color: "#9a6c00", lineHeight: 1.5 }}>Show this screen to a staff member for assistance.</div>
           </div>
         </div>
-
         {phase !== "printing" && (
           <button onClick={onDismiss} style={{ width: "100%", padding: "14px", background: "#7E49F2", border: "none", borderRadius: "14px", color: "white", fontWeight: 800, fontSize: "15px", cursor: "pointer", fontFamily: "'Sora', sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
             <i className="ti ti-refresh" style={{ fontSize: "17px" }} aria-hidden="true" />
@@ -239,11 +212,13 @@ function FileRow({ fp, phase, idx, fileData }: { fp: FileProgress; phase: Phase;
   const statusColor: Record<string, string> = { pending: "rgba(0,0,0,0.25)", downloading: "#F2CB07", printing: "#F2CB07", done: "#16a34a", failed: "#ef4444" };
 
   const showPrintBar = phase === "printing" && fp.print_status === "printing" && fp.print_pct !== undefined;
-  const pages  = fileData?.number_of_pages ?? "—";
-  const copies = fileData?.copies ?? "—";
-  const mode   = fileData?.printing_mode === "color" ? "Color" : "Mono";
-  const side   = fileData?.printing_side === "double_side" ? "Double-sided" : "One-sided";
-  const range  = fileData?.page_range?.[0] ?? null;
+  const pages   = fileData?.number_of_pages ?? "—";
+  const copies  = fileData?.copies ?? "—";
+  const mode    = fileData?.printing_mode === "color" ? "Color" : "Mono";
+  const side    = fileData?.printing_side === "double_side" ? "Double-sided" : "One-sided";
+  const range   = fileData?.page_range?.[0] ?? null;
+  // ← FIXED: read page_layout (the actual API field name)
+  const layout  = fileData?.page_layout === 2 ? "2-up" : null;
 
   return (
     <div style={{ animation: `slideUp 0.4s ease both`, animationDelay: `${idx * 0.07}s`, position: "relative" }}>
@@ -252,25 +227,27 @@ function FileRow({ fp, phase, idx, fileData }: { fp: FileProgress; phase: Phase;
       <div style={{ background: "white", borderRadius: "18px", overflow: "hidden" }}>
         <div style={{ padding: "20px 26px 16px", borderBottom: "1.5px dashed rgba(126,73,242,0.20)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{ background: extStyle.bg, border: `1.5px solid ${extStyle.border}`, borderRadius: "8px", padding: "4px 9px", fontSize: "10px", fontWeight: 800, color: extStyle.text, letterSpacing: "0.6px", textTransform: "uppercase", flexShrink: 0 }}>
-              {ext || "FILE"}
-            </div>
+            <div style={{ background: extStyle.bg, border: `1.5px solid ${extStyle.border}`, borderRadius: "8px", padding: "4px 9px", fontSize: "10px", fontWeight: 800, color: extStyle.text, letterSpacing: "0.6px", textTransform: "uppercase", flexShrink: 0 }}>{ext || "FILE"}</div>
             <div style={{ flex: 1, fontWeight: 700, fontSize: "13px", color: "#1a1a2e", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fp.file_name}</div>
             <div style={{ fontSize: "12px", fontWeight: 700, color: statusColor[status] || "#999", flexShrink: 0, display: "flex", alignItems: "center", gap: "5px" }}>
-              {status === "done" && <i className="ti ti-circle-check" style={{ fontSize: "15px", color: "#16a34a" }} aria-hidden="true" />}
-              {status === "failed" && <i className="ti ti-circle-x" style={{ fontSize: "15px", color: "#ef4444" }} aria-hidden="true" />}
+              {status === "done"       && <i className="ti ti-circle-check" style={{ fontSize: "15px", color: "#16a34a" }} aria-hidden="true" />}
+              {status === "failed"     && <i className="ti ti-circle-x"     style={{ fontSize: "15px", color: "#ef4444" }} aria-hidden="true" />}
               {(status === "downloading" || status === "printing") && <span style={{ display: "inline-block", width: "7px", height: "7px", borderRadius: "50%", background: "#F2CB07", animation: "pulse 1s ease-in-out infinite" }} />}
               {statusLabel[status] || status}
             </div>
           </div>
         </div>
+
         <div style={{ padding: showPrintBar ? "12px 26px 8px" : "12px 26px 18px", display: "flex", gap: "14px", flexWrap: "wrap" }}>
           {[
-            { icon: "ti-file-text", val: `${pages} page${pages === 1 ? "" : "s"}` },
-            { icon: "ti-copy", val: `${copies} cop${copies === 1 ? "y" : "ies"}` },
-            { icon: "ti-palette", val: mode },
-            { icon: "ti-layout-rows", val: side },
-            ...(range ? [{ icon: "ti-list-numbers", val: `Pages ${range}` }] : []),
+            { icon: "ti-file-text",    val: `${pages} page${pages === 1 ? "" : "s"}` },
+            { icon: "ti-copy",         val: `${copies} cop${copies === 1 ? "y" : "ies"}` },
+            { icon: "ti-palette",      val: mode },
+            { icon: "ti-layout-rows",  val: side },
+            // ← page range badge
+            ...(range  ? [{ icon: "ti-list-numbers", val: `Pages ${range}` }] : []),
+            // ← 2-up badge (only shown when page_layout === 2)
+            ...(layout ? [{ icon: "ti-layout-grid",  val: layout           }] : []),
           ].map(({ icon, val }) => (
             <div key={icon} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "#888" }}>
               <i className={`ti ${icon}`} style={{ fontSize: "13px", color: "#bbb" }} aria-hidden="true" />
@@ -278,10 +255,11 @@ function FileRow({ fp, phase, idx, fileData }: { fp: FileProgress; phase: Phase;
             </div>
           ))}
         </div>
+
         {showPrintBar && (
           <div style={{ padding: "0 26px 18px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px" }}>
-              <span style={{ fontSize: "10px", color: "#bbb", fontWeight: 600 }}>Page progress</span>
+              <span style={{ fontSize: "10px", color: "#bbb", fontWeight: 600 }}>Sheet progress</span>
               <span style={{ fontSize: "10px", color: "#b89300", fontWeight: 700 }}>{fp.print_current ?? 0} / {fp.print_total ?? "?"} · {fp.print_pct}%</span>
             </div>
             <div style={{ height: "5px", borderRadius: "100px", background: "rgba(126,73,242,0.10)", overflow: "hidden" }}>
@@ -307,7 +285,11 @@ function BottomProgressBar({ phase, progressPct, downloadedCount, printedCount, 
         <div>
           <div style={{ color: "white", fontSize: "13px", fontWeight: 700, marginBottom: "2px" }}>{isPrinting ? "Print Progress" : "Download Progress"}</div>
           <div style={{ color: "rgba(255,255,255,0.40)", fontSize: "11px" }}>
-            {isPrinting ? (printingFile?.print_pct !== undefined ? `${printedCount} / ${total} files · current ${printingFile.print_pct}%` : `${printedCount} / ${total} files printed`) : `${downloadedCount} / ${total} files downloaded`}
+            {isPrinting
+              ? (printingFile?.print_pct !== undefined
+                  ? `${printedCount} / ${total} files · current ${printingFile.print_pct}%`
+                  : `${printedCount} / ${total} files printed`)
+              : `${downloadedCount} / ${total} files downloaded`}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "20px", padding: "5px 13px" }}>
@@ -355,13 +337,11 @@ export default function LoadingPage() {
   const [fileProgress, setFileProgress] = useState<FileProgress[]>(
     files.map((f: any) => ({ file_id: f.file_id, file_name: f.file_name, download_status: "pending", print_status: "pending" }))
   );
-  const [errorInfo, setErrorInfo]                       = useState<ErrorInfo | null>(null);
-  const [printerAlert, setPrinterAlert]                 = useState<AlertInfo | null>(null);
-  const [printerDisconnected, setPrinterDisconnected]   = useState(false);
-  const [overallMessage, setOverallMessage]             = useState("Preparing your documents…");
+  const [errorInfo, setErrorInfo]                     = useState<ErrorInfo | null>(null);
+  const [printerAlert, setPrinterAlert]               = useState<AlertInfo | null>(null);
+  const [printerDisconnected, setPrinterDisconnected] = useState(false);
+  const [overallMessage, setOverallMessage]           = useState("Preparing your documents…");
 
-  // Sound plays whenever ANY blocking alert is active (hardware issues OR disconnected).
-  // It does NOT play for errorInfo — that's a terminal state, no sound needed.
   useAlertSound(printerAlert !== null || printerDisconnected);
 
   const currentFileIdRef   = useRef<string | null>(null);
@@ -389,47 +369,45 @@ export default function LoadingPage() {
     throw new Error("unreachable");
   }
 
-  // ── Print with auto-retry on disconnect ───────────────────────────────────
-  // Flow on disconnect:
-  //   1. Rust detects USB gone → emits printer:disconnected → returns Err("disconnected…")
-  //   2. invoke() throws here → we show the modal and poll every 4 s
-  //   3. Once USB is back, Rust check_printer_ready() passes → invoke succeeds
-  //   4. On success we clear printerDisconnected → modal disappears automatically
   async function printFile(file: any, localPath: string) {
     currentFileIdRef.current = file.file_id;
+
+    // ── Compute correct sheet count for progress bar ──────────────────────
+    // page_layout: 1 = normal (1 page/sheet), 2 = 2-up (2 pages/sheet)
+    const sheets = computeSheets(file);
+
     updateFile(file.file_id, {
       print_status:  "printing",
       print_pct:     0,
       print_current: 0,
-      print_total:   (file.number_of_pages ?? 1) * (file.copies ?? 1),
+      print_total:   sheets,
     });
 
     while (true) {
       try {
         await invoke("print_pdf_command", {
-          pdfPath:   localPath,
-          fileName:  file.file_name,
-          pages:     file.number_of_pages ?? 1,
-          copies:    file.copies ?? 1,
-          colorMode: file.printing_mode === "color" ? "Color" : "Monochrome",
-          duplex:    file.printing_side === "double_side",
-          pageRange: file.page_range?.[0] ?? null,
-          sessionId: job?.session_id,
+          pdfPath:      localPath,
+          fileName:     file.file_name,
+          pages:        sheets,                                  // ← sheet count for timeout estimate
+          copies:       file.copies ?? 1,
+          colorMode:    file.printing_mode === "color" ? "Color" : "Monochrome",
+          duplex:       file.printing_side === "double_side",
+          pageRange:    file.page_range?.[0] ?? null,
+          pagesPerSheet: file.page_layout === 2 ? "2" : null,   // ← FIXED: read page_layout
+          sessionId:    job?.session_id,
         });
 
-        // ── Success: clear disconnect modal and finish ─────────────────────
         setPrinterDisconnected(false);
         updateFile(file.file_id, {
           print_status:  "done",
           print_pct:     100,
-          print_current: (file.number_of_pages ?? 1) * (file.copies ?? 1),
+          print_current: sheets,
         });
         break;
 
       } catch (err: any) {
         const msg = (err?.message || String(err)).toLowerCase();
 
-        // ── Disconnect / not found → show modal, wait 4 s, retry ─────────
         if (
           msg.includes("not connected")           ||
           msg.includes("disconnected")            ||
@@ -439,10 +417,9 @@ export default function LoadingPage() {
         ) {
           setPrinterDisconnected(true);
           await new Promise((r) => setTimeout(r, 4000));
-          continue; // ← loop back and retry invoke
+          continue;
         }
 
-        // ── Any other error: clear disconnect modal, propagate as fatal ───
         setPrinterDisconnected(false);
         updateFile(file.file_id, { print_status: "failed" });
         currentFileIdRef.current = null;
@@ -506,7 +483,6 @@ export default function LoadingPage() {
       );
     }).then((fn) => unlisten.push(fn));
 
-    // Paper empty — 5-min escalation timer
     listen("printer:paper_empty", () => {
       setPrinterAlert({ icon: "ti-file-x", title: "Paper tray is empty", message: "Please refill the paper tray to continue printing." });
       if (paperEmptyTimerRef.current) clearTimeout(paperEmptyTimerRef.current);
@@ -516,7 +492,6 @@ export default function LoadingPage() {
       }, 5 * 60 * 1000);
     }).then((fn) => unlisten.push(fn));
 
-    // Other alert banners
     const bannerEvents: [string, string, string, string][] = [
       ["printer:paper_jam", "ti-alert-triangle", "Paper jam detected",  "Please clear the jam and printing will resume."],
       ["printer:ink_empty", "ti-droplet-off",    "Ink cartridge empty", "Please replace the cartridge to continue."],
@@ -526,32 +501,18 @@ export default function LoadingPage() {
       listen(event, () => setPrinterAlert({ icon, title, message })).then((fn) => unlisten.push(fn));
     });
 
-    // Cleared events — dismiss alert, stop sound
     const clearedEvents = ["printer:paper_refilled", "printer:jam_cleared", "printer:ink_replaced"];
     clearedEvents.forEach((event) => {
       listen(event, () => {
-        if (paperEmptyTimerRef.current) {
-          clearTimeout(paperEmptyTimerRef.current);
-          paperEmptyTimerRef.current = null;
-        }
+        if (paperEmptyTimerRef.current) { clearTimeout(paperEmptyTimerRef.current); paperEmptyTimerRef.current = null; }
         setPrinterAlert(null);
       }).then((fn) => unlisten.push(fn));
     });
 
-    // Timeout — silent dismiss
-    listen("printer:timeout", () => {
-      setPrinterAlert(null);
-    }).then((fn) => unlisten.push(fn));
+    listen("printer:timeout", () => { setPrinterAlert(null); }).then((fn) => unlisten.push(fn));
 
-    // ── printer:disconnected — DO NOT set errorInfo here.
-    // The printFile retry loop owns the disconnect recovery.
-    // This event just ensures the modal is visible if somehow
-    // the event fires before the catch block runs.
-    listen("printer:disconnected", () => {
-      setPrinterDisconnected(true);
-    }).then((fn) => unlisten.push(fn));
+    listen("printer:disconnected", () => { setPrinterDisconnected(true); }).then((fn) => unlisten.push(fn));
 
-    // printer:failed — truly fatal hardware error (not a disconnect)
     listen<string>("printer:failed", ({ payload }) => {
       setPrinterAlert(null);
       setPrinterDisconnected(false);
@@ -619,29 +580,12 @@ export default function LoadingPage() {
         ))}
       </div>
 
-      <BottomProgressBar
-        phase={phase}
-        progressPct={progressPct}
-        downloadedCount={downloadedCount}
-        printedCount={printedCount}
-        total={total}
-        printingFile={printingFile}
-      />
+      <BottomProgressBar phase={phase} progressPct={progressPct} downloadedCount={downloadedCount} printedCount={printedCount} total={total} printingFile={printingFile} />
 
-      {/*
-        Modal priority (only one shows at a time):
-          1. printerDisconnected  — mid-print USB loss, retry in progress
-          2. printerAlert         — paper/jam/ink warnings (printer still connected)
-          3. errorInfo            — terminal failure, no auto-recovery
-      */}
       {printerDisconnected && <PrinterDisconnectedModal />}
       {!printerDisconnected && printerAlert && <AlertModal alert={printerAlert} />}
       {!printerDisconnected && !printerAlert && errorInfo && (
-        <ErrorModal
-          error={errorInfo}
-          phase={phase}
-          onDismiss={() => { setErrorInfo(null); navigate(-1); }}
-        />
+        <ErrorModal error={errorInfo} phase={phase} onDismiss={() => { setErrorInfo(null); navigate(-1); }} />
       )}
 
       <style>{`

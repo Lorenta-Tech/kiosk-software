@@ -1,25 +1,29 @@
-/* ─── Global Color Theme ─────────────────────────────────────────────────── */
-@import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap');
+  /* ─── Global Color Theme ─────────────────────────────────────────────────── */
+  @import "tailwindcss";
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap');
 
-:root {
-  --color-primary: #7E49F2;
-  --color-accent:  #F2CB07;
-  --color-white:   #FFFFFF;
-  --color-dark:    #1A1426;
-}
+  :root {
+    --color-primary: #7E49F2;
+    --color-accent:  #F2CB07;
+    --color-white:   #FFFFFF;
+    --color-dark:    #1A1426;
+  }
 
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
 
 
 
-html, body, #root {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  font-family: 'Sora', sans-serif;
-}
+  html, body, #root {
+    width: 100vw;
+    height: 100vh;
+
+    margin: 0;
+    padding:0;
+    
+    overflow: hidden;
+    font-family: 'Sora', sans-serif;
+  }

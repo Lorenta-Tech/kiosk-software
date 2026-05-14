@@ -9,11 +9,7 @@ function useClock() {
   }, []);
   return now;
 }
-// Add this function inside the component, before the return
-const playTouch = () => {
-  const audio = new Audio("/music/touch.wav");
-  audio.play().catch(() => {}); // catch prevents console error if browser blocks autoplay
-};
+
 export default function Home() {
   const now = useClock();
   const navigate = useNavigate();
@@ -27,7 +23,11 @@ export default function Home() {
     month: "short",
     year: "numeric",
   });
-
+// Add this function inside the component, before the return
+const playTouch = () => {
+  const audio = new Audio("/music/touch.wav");
+  audio.play().catch(() => {}); // catch prevents console error if browser blocks autoplay
+};
   return (
     <div
       className="w-screen h-screen flex flex-col overflow-hidden"

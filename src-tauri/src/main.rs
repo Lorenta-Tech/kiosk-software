@@ -58,6 +58,7 @@ fn main() {
             commands::print::print_commands::print_pdf_command,
 
             commands::network::network_commands::check_internet,
+            commands::checkPrinter::check::check_printer_ready_command,
 
         ])
 

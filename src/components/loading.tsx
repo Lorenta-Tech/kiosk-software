@@ -54,7 +54,6 @@ function parseError(raw: string): { fileName?: string; reason?: string; message:
 }
 
 // ── Compute sheets for progress bar ──────────────────────────────────────────
-// page_layout: 1 = normal, 2 = 2-up (2 pages per sheet)
 function computeSheets(file: any): number {
   const layout   = file.page_layout === 2 ? 2 : 1;
   const copies   = file.copies ?? 1;
@@ -217,7 +216,6 @@ function FileRow({ fp, phase, idx, fileData }: { fp: FileProgress; phase: Phase;
   const mode    = fileData?.printing_mode === "color" ? "Color" : "Mono";
   const side    = fileData?.printing_side === "double_side" ? "Double-sided" : "One-sided";
   const range   = fileData?.page_range?.[0] ?? null;
-  // ← FIXED: read page_layout (the actual API field name)
   const layout  = fileData?.page_layout === 2 ? "2-up" : null;
 
   return (
@@ -244,9 +242,7 @@ function FileRow({ fp, phase, idx, fileData }: { fp: FileProgress; phase: Phase;
             { icon: "ti-copy",         val: `${copies} cop${copies === 1 ? "y" : "ies"}` },
             { icon: "ti-palette",      val: mode },
             { icon: "ti-layout-rows",  val: side },
-            // ← page range badge
             ...(range  ? [{ icon: "ti-list-numbers", val: `Pages ${range}` }] : []),
-            // ← 2-up badge (only shown when page_layout === 2)
             ...(layout ? [{ icon: "ti-layout-grid",  val: layout           }] : []),
           ].map(({ icon, val }) => (
             <div key={icon} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "#888" }}>
@@ -372,8 +368,6 @@ export default function LoadingPage() {
   async function printFile(file: any, localPath: string) {
     currentFileIdRef.current = file.file_id;
 
-    // ── Compute correct sheet count for progress bar ──────────────────────
-    // page_layout: 1 = normal (1 page/sheet), 2 = 2-up (2 pages/sheet)
     const sheets = computeSheets(file);
 
     updateFile(file.file_id, {
@@ -388,15 +382,16 @@ export default function LoadingPage() {
         await invoke("print_pdf_command", {
           pdfPath:      localPath,
           fileName:     file.file_name,
-          pages:        sheets,                                  // ← sheet count for timeout estimate
+          pages:        sheets,
           copies:       file.copies ?? 1,
           colorMode:    file.printing_mode === "color" ? "Color" : "Monochrome",
           duplex:       file.printing_side === "double_side",
           pageRange:    file.page_range?.[0] ?? null,
-          pagesPerSheet: file.page_layout === 2 ? "2" : null,   // ← FIXED: read page_layout
+          pagesPerSheet: file.page_layout === 2 ? "2" : null,
           sessionId:    job?.session_id,
         });
 
+        // ── Print succeeded: clear disconnect state and mark done ──────────
         setPrinterDisconnected(false);
         updateFile(file.file_id, {
           print_status:  "done",
@@ -408,6 +403,7 @@ export default function LoadingPage() {
       } catch (err: any) {
         const msg = (err?.message || String(err)).toLowerCase();
 
+        // ── Printer disconnected: poll check_printer_ready_command until back ──
         if (
           msg.includes("not connected")           ||
           msg.includes("disconnected")            ||
@@ -416,10 +412,24 @@ export default function LoadingPage() {
           (msg.includes("please contact staff") && msg.includes("connect"))
         ) {
           setPrinterDisconnected(true);
-          await new Promise((r) => setTimeout(r, 4000));
-          continue;
+
+          // Poll every 3 s until the printer is ready, then clear the modal
+          while (true) {
+            await new Promise((r) => setTimeout(r, 3000));
+            try {
+              await invoke("check_printer_ready_command");
+              // Printer is back — dismiss the modal immediately before retrying
+              setPrinterDisconnected(false);
+              break;
+            } catch {
+              // Still not ready, keep polling
+            }
+          }
+
+          continue; // retry print_pdf_command
         }
 
+        // ── Any other error: surface it to the user ────────────────────────
         setPrinterDisconnected(false);
         updateFile(file.file_id, { print_status: "failed" });
         currentFileIdRef.current = null;

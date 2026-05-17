@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { setJob } from "../store/jobStore";
@@ -28,16 +28,18 @@ export default function OTPPage() {
 
   const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
   const date = now.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
-// Add this inside the component, before the return
-const playTouch = useCallback(() => {
-  const isDev = window.location.protocol === "http:";
-  const src = isDev ? "/music/touch.wav" : "asset://localhost/music/touch.wav";
-  console.log("Protocol:", window.location.protocol);
-  console.log("Audio src:", src);
+  
+const playTouch = useCallback(async () => {
+  let src: string;
+  if (window.location.protocol === "http:") {
+    src = "/music/touch.wav"; // dev: served by Vite from public/
+  } else {
+    const { resolveResource } = await import("@tauri-apps/api/path");
+    const resourcePath = await resolveResource("resources/music/touch.wav");
+    src = convertFileSrc(resourcePath);
+  }
   const audio = new Audio(src);
-  audio.play()
-    .then(() => console.log("✅ playing"))
-    .catch((err) => console.log("❌", err.name, err.message));
+  audio.play().catch(console.error);
 }, []);
   const submitOTP = useCallback(async (currentDigits: string[]) => {
     const otp = currentDigits.join("");

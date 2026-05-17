@@ -1,17 +1,33 @@
 import { useEffect, useRef } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { resolveResource } from "@tauri-apps/api/path";
 
 export default function OfflinePopup() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    const audio = new Audio("/music/alert.wav");
-    audio.loop = true;
-    audio.play().catch(() => {});
-    audioRef.current = audio;
+    async function startAudio() {
+      let src: string;
+      if (window.location.protocol === "http:") {
+        src = "/music/alert.wav";
+      } else {
+        const resourcePath = await resolveResource("resources/music/alert.wav");
+        src = convertFileSrc(resourcePath);
+      }
+      const audio = new Audio(src);
+      audio.loop = true;
+      audio.play().catch(() => {});
+      audioRef.current = audio;
+    }
+
+    startAudio();
 
     return () => {
-      audio.pause();
-      audio.currentTime = 0;
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        audioRef.current = null;
+      }
     };
   }, []);
 

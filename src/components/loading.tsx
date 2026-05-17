@@ -1,13 +1,23 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { resolveResource } from "@tauri-apps/api/path";
 import { getJob } from "../store/jobStore";
 
+// ── Resolve audio src (dev vs production) ────────────────────────────────────
+async function getAudioSrc(fileName: string): Promise<string> {
+  if (window.location.protocol === "http:") {
+    return `/music/${fileName}`;
+  }
+  const resourcePath = await resolveResource(`resources/music/${fileName}`);
+  return convertFileSrc(resourcePath);
+}
 
+// ── Constants ────────────────────────────────────────────────────────────────
 const MAX_RETRIES = 2;
 
-
+// ── Types ────────────────────────────────────────────────────────────────────
 type Phase = "downloading" | "printing" | "done";
 
 interface FileProgress {
@@ -87,13 +97,13 @@ function useAlertSound(active: boolean) {
 
   useEffect(() => {
     if (active) {
-      const isDev = window.location.protocol === "http:";
-      const src = isDev ? "/music/alert.wav" : "asset://localhost/music/alert.wav";
-      const audio = new Audio(src);
-      audio.loop = true;
-      audio.volume = 0.7;
-      audio.play().catch(() => {});
-      audioRef.current = audio;
+      getAudioSrc("alert.wav").then((src) => {
+        const audio = new Audio(src);
+        audio.loop = true;
+        audio.volume = 0.7;
+        audio.play().catch(() => {});
+        audioRef.current = audio;
+      });
     } else {
       if (audioRef.current) {
         audioRef.current.pause();

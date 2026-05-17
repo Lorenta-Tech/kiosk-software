@@ -44,7 +44,7 @@
       "csp": null,
       "assetProtocol": {
       "enable": true,
-      "scope": ["**"]
+        "scope": ["$RESOURCE/**"]
     }
     }
   },
@@ -54,7 +54,8 @@
 
     "targets": "all",
     "resources": {
-       "../public/music/*": "music/"
+          "music/*": "resources/music/"
+
 
   }
   }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { getJob } from "../store/jobStore";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 function useClock() {
   const [now, setNow] = useState(new Date());
@@ -110,12 +111,17 @@ export default function MetadataPage() {
 
   const [secsLeft, setSecsLeft]         = useState(60);
   const [timerWarning, setTimerWarning] = useState(false);
-// Add this function inside the component, before the return
-const playTouch = useCallback(() => {
-  const isDev = window.location.protocol === "http:";
-  const src = isDev ? "/music/touch.wav" : "asset://localhost/music/touch.wav";
+const playTouch = useCallback(async () => {
+  let src: string;
+  if (window.location.protocol === "http:") {
+    src = "/music/touch.wav"; // dev: served by Vite from public/
+  } else {
+    const { resolveResource } = await import("@tauri-apps/api/path");
+    const resourcePath = await resolveResource("resources/music/touch.wav");
+    src = convertFileSrc(resourcePath);
+  }
   const audio = new Audio(src);
-  audio.play().catch(() => {});
+  audio.play().catch(console.error);
 }, []);
   const resetTimer = useCallback(() => {
     setSecsLeft(60);
@@ -341,12 +347,12 @@ console.log(timerWarning);
   }}
   style={{
     width: "100%",
-    height: "58px",
+    height: "68px",
     background: "white",
     border: "none",
     borderRadius: "9999px",
     color: "#7E49F2",
-    fontSize: "17px",
+    fontSize: "24px",
     fontWeight: 800,
     letterSpacing: "0.2px",
     cursor: "pointer",

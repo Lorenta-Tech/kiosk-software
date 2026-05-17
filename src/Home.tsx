@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
 function useClock() {
@@ -24,10 +24,16 @@ export default function Home() {
     year: "numeric",
   });
 // Add this function inside the component, before the return
-const playTouch = () => {
-  const audio = new Audio("/music/touch.wav");
-  audio.play().catch(() => {}); // catch prevents console error if browser blocks autoplay
-};
+const playTouch = useCallback(() => {
+  const isDev = window.location.protocol === "http:";
+  const src = isDev ? "/music/touch.wav" : "asset://localhost/music/touch.wav";
+  console.log("Protocol:", window.location.protocol);
+  console.log("Audio src:", src);
+  const audio = new Audio(src);
+  audio.play()
+    .then(() => console.log("✅ playing"))
+    .catch((err) => console.log("❌", err.name, err.message));
+}, []);
   return (
     <div
       className="w-screen h-screen flex flex-col overflow-hidden"
@@ -81,7 +87,7 @@ const playTouch = () => {
         <button
        onClick={() => {
   playTouch();
-  navigate("/otp");
+  setTimeout(() => navigate("/otp"), 150); 
 }}
           className="rounded-xl font-semibold z-10"
           style={{

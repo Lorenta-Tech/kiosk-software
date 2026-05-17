@@ -12,27 +12,40 @@ fn main() {
 
     tauri::Builder::default()
 
-        .setup(|app| {
+        // .setup(|app| {
 
-            let window = app.get_webview_window("main").unwrap();
+        //     let window = app.get_webview_window("main").unwrap();
 
-            window.set_decorations(false).unwrap();
+        //     window.set_decorations(false).unwrap();
 
-            window.set_resizable(false).unwrap();
+        //     window.set_resizable(false).unwrap();
 
-            window.set_always_on_top(true).unwrap();
+        //     window.set_always_on_top(true).unwrap();
 
-            window.set_position(
-                tauri::PhysicalPosition::new(0, 0)
-            ).unwrap();
+        //     window.set_position(
+        //         tauri::PhysicalPosition::new(0, 0)
+        //     ).unwrap();
 
-            window.set_size(
-                tauri::PhysicalSize::new(1080, 1920)
-            ).unwrap();
+        //     window.set_size(
+        //         tauri::PhysicalSize::new(1080, 1920)
+        //     ).unwrap();
 
-            Ok(())
-        })
+        //     Ok(())
+        // })
+.setup(|app| {
 
+    let window = app.get_webview_window("main").unwrap();
+
+    window.set_decorations(false).unwrap();
+
+    window.set_resizable(false).unwrap();
+
+    window.set_fullscreen(true).unwrap();
+
+    window.set_always_on_top(true).unwrap();
+
+    Ok(())
+})
         .on_window_event(|window, event| {
 
             match event {

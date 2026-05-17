@@ -41,7 +41,11 @@
     ],
 
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+      "enable": true,
+      "scope": ["**"]
+    }
     }
   },
 
@@ -50,7 +54,8 @@
 
     "targets": "all",
     "resources": {
-      "music/*": "music/"
-    }
+       "../public/music/*": "music/"
+
+  }
   }
 }

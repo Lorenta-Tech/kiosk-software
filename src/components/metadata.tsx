@@ -111,10 +111,12 @@ export default function MetadataPage() {
   const [secsLeft, setSecsLeft]         = useState(60);
   const [timerWarning, setTimerWarning] = useState(false);
 // Add this function inside the component, before the return
-const playTouch = () => {
-  const audio = new Audio("/music/touch.wav");
+const playTouch = useCallback(() => {
+  const isDev = window.location.protocol === "http:";
+  const src = isDev ? "/music/touch.wav" : "asset://localhost/music/touch.wav";
+  const audio = new Audio(src);
   audio.play().catch(() => {});
-};
+}, []);
   const resetTimer = useCallback(() => {
     setSecsLeft(60);
     setTimerWarning(false);

@@ -30,8 +30,14 @@ export default function OTPPage() {
   const date = now.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
 // Add this inside the component, before the return
 const playTouch = useCallback(() => {
-  const audio = new Audio("/music/touch.wav");
-  audio.play().catch(() => {});
+  const isDev = window.location.protocol === "http:";
+  const src = isDev ? "/music/touch.wav" : "asset://localhost/music/touch.wav";
+  console.log("Protocol:", window.location.protocol);
+  console.log("Audio src:", src);
+  const audio = new Audio(src);
+  audio.play()
+    .then(() => console.log("✅ playing"))
+    .catch((err) => console.log("❌", err.name, err.message));
 }, []);
   const submitOTP = useCallback(async (currentDigits: string[]) => {
     const otp = currentDigits.join("");

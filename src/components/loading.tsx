@@ -6,6 +6,7 @@ import { getJob } from "../store/jobStore";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const MAX_RETRIES = 2;
+const PRINT_TIMEOUT_MS = 30_000; // 30 seconds — navigate back if print hangs
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Phase = "downloading" | "printing" | "done";
@@ -54,15 +55,31 @@ function parseError(raw: string): { fileName?: string; reason?: string; message:
 }
 
 // ── Compute sheets for progress bar ──────────────────────────────────────────
+// Join all page_range array elements into one comma-separated string.
+// Server sends ["1-2","4"] → we need "1-2,4" for qpdf.
+function joinPageRange(pageRange: string[] | null | undefined): string | null {
+  if (!pageRange || pageRange.length === 0) return null;
+  return pageRange.join(",");
+}
+
 function computeSheets(file: any): number {
-  const layout   = file.page_layout === 2 ? 2 : 1;
-  const copies   = file.copies ?? 1;
-  const range    = file.page_range?.[0] as string | undefined;
+  const layout  = file.page_layout === 2 ? 2 : 1;
+  const copies  = file.copies ?? 1;
+  // Join ALL elements of page_range array, not just [0]
+  const range   = joinPageRange(file.page_range);
 
   let pageCount: number;
   if (range) {
-    const [start, end] = range.split("-").map(Number);
-    pageCount = isNaN(end) ? 1 : Math.max(1, end - start + 1);
+    // Handles "1-2,4", "1-12", "3", etc.
+    const parts = range.split(",");
+    pageCount = parts.reduce((sum, part) => {
+      const trimmed = part.trim();
+      if (trimmed.includes("-")) {
+        const [start, end] = trimmed.split("-").map(Number);
+        return sum + (isNaN(end) ? 1 : Math.max(1, end - start + 1));
+      }
+      return sum + 1;
+    }, 0);
   } else {
     pageCount = file.number_of_pages ?? 1;
   }
@@ -76,7 +93,9 @@ function useAlertSound(active: boolean) {
 
   useEffect(() => {
     if (active) {
-      const audio = new Audio("/music/alert.wav");
+      const isDev = window.location.protocol === "http:";
+      const src = isDev ? "/music/alert.wav" : "asset://localhost/music/alert.wav";
+      const audio = new Audio(src);
       audio.loop = true;
       audio.volume = 0.7;
       audio.play().catch(() => {});
@@ -158,10 +177,11 @@ function ErrorModal({ error, onDismiss, phase }: { error: ErrorInfo; onDismiss: 
 
   let iconClass = "ti-plug-connected-x";
   const r = (error.reason || error.message).toLowerCase();
-  if (r.includes("paper") || r.includes("jam"))             iconClass = "ti-file-x";
-  else if (r.includes("ink") || r.includes("cartridge"))    iconClass = "ti-droplet-off";
-  else if (r.includes("timeout"))                           iconClass = "ti-clock-x";
-  else if (r.includes("download") || r.includes("network")) iconClass = "ti-wifi-off";
+  if (r.includes("paper") || r.includes("jam"))              iconClass = "ti-file-x";
+  else if (r.includes("ink") || r.includes("cartridge"))     iconClass = "ti-droplet-off";
+  else if (r.includes("timeout") || r.includes("timed out")) iconClass = "ti-clock-x";
+  else if (r.includes("download") || r.includes("network"))  iconClass = "ti-wifi-off";
+  else if (r.includes("qpdf") || r.includes("warning"))      iconClass = "ti-file-alert";
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(55,18,165,0.72)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "24px", animation: "fadeIn 0.22s ease" }}>
@@ -201,6 +221,47 @@ function ErrorModal({ error, onDismiss, phase }: { error: ErrorInfo; onDismiss: 
   );
 }
 
+// ── Timeout Modal ─────────────────────────────────────────────────────────────
+function TimeoutModal({ countdown }: { countdown: number }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(55,18,165,0.72)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "24px", animation: "fadeIn 0.22s ease" }}>
+      <div style={{ background: "white", borderRadius: "28px", padding: "36px 30px 32px", maxWidth: "300px", width: "100%", textAlign: "center", boxShadow: "0 32px 80px rgba(0,0,0,0.22)", fontFamily: "'Sora', sans-serif", animation: "popIn 0.28s cubic-bezier(0.34,1.56,0.64,1) both" }}>
+        <div style={{ width: "76px", height: "76px", borderRadius: "50%", background: "#FFF3E0", border: "2px solid #FF9800", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", position: "relative" }}>
+          <i className="ti ti-clock-x" style={{ fontSize: "32px", color: "#E65100" }} aria-hidden="true" />
+          {/* countdown ring */}
+          <svg style={{ position: "absolute", inset: "-4px", width: "84px", height: "84px" }} viewBox="0 0 84 84">
+            <circle cx="42" cy="42" r="39" fill="none" stroke="#FFE0B2" strokeWidth="3" />
+            <circle
+              cx="42" cy="42" r="39"
+              fill="none"
+              stroke="#FF9800"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeDasharray={`${2 * Math.PI * 39}`}
+              strokeDashoffset={`${2 * Math.PI * 39 * (1 - countdown / 30)}`}
+              transform="rotate(-90 42 42)"
+              style={{ transition: "stroke-dashoffset 1s linear" }}
+            />
+          </svg>
+        </div>
+        <div style={{ fontSize: "19px", fontWeight: 700, color: "#1a1a2e", marginBottom: "8px", letterSpacing: "-0.2px" }}>Print Timed Out</div>
+        <div style={{ fontSize: "13px", color: "#888", lineHeight: 1.7, marginBottom: "16px" }}>
+          The printer is not responding. Returning to the previous screen in <strong style={{ color: "#E65100" }}>{countdown}s</strong>.
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", background: "#FFF8EC", border: "1.5px solid #F2CB07", borderRadius: "16px", padding: "14px 16px", textAlign: "left" }}>
+          <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#FFF0CC", border: "1.5px solid #EF9F27", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <i className="ti ti-headset" style={{ fontSize: "18px", color: "#854F0B" }} aria-hidden="true" />
+          </div>
+          <div>
+            <div style={{ fontSize: "13px", fontWeight: 700, color: "#633806", marginBottom: "2px" }}>Please contact support</div>
+            <div style={{ fontSize: "11px", color: "#9a6c00", lineHeight: 1.5 }}>Show this screen to a staff member for assistance.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── File Row ──────────────────────────────────────────────────────────────────
 function FileRow({ fp, phase, idx, fileData }: { fp: FileProgress; phase: Phase; idx: number; fileData: any }) {
   const ext      = getExt(fp.file_name);
@@ -211,12 +272,12 @@ function FileRow({ fp, phase, idx, fileData }: { fp: FileProgress; phase: Phase;
   const statusColor: Record<string, string> = { pending: "rgba(0,0,0,0.25)", downloading: "#F2CB07", printing: "#F2CB07", done: "#16a34a", failed: "#ef4444" };
 
   const showPrintBar = phase === "printing" && fp.print_status === "printing" && fp.print_pct !== undefined;
-  const pages   = fileData?.number_of_pages ?? "—";
-  const copies  = fileData?.copies ?? "—";
-  const mode    = fileData?.printing_mode === "color" ? "Color" : "Mono";
-  const side    = fileData?.printing_side === "double_side" ? "Double-sided" : "One-sided";
-  const range   = fileData?.page_range?.[0] ?? null;
-  const layout  = fileData?.page_layout === 2 ? "2-up" : null;
+  const pages  = fileData?.number_of_pages ?? "—";
+  const copies = fileData?.copies ?? "—";
+  const mode   = fileData?.printing_mode === "color" ? "Color" : "Mono";
+  const side   = fileData?.printing_side === "double_side" ? "Double-sided" : "One-sided";
+  const range  = fileData?.page_range?.length ? fileData.page_range.join(", ") : null;
+  const layout = fileData?.page_layout === 2 ? "2-up" : null;
 
   return (
     <div style={{ animation: `slideUp 0.4s ease both`, animationDelay: `${idx * 0.07}s`, position: "relative" }}>
@@ -238,10 +299,10 @@ function FileRow({ fp, phase, idx, fileData }: { fp: FileProgress; phase: Phase;
 
         <div style={{ padding: showPrintBar ? "12px 26px 8px" : "12px 26px 18px", display: "flex", gap: "14px", flexWrap: "wrap" }}>
           {[
-            { icon: "ti-file-text",    val: `${pages} page${pages === 1 ? "" : "s"}` },
-            { icon: "ti-copy",         val: `${copies} cop${copies === 1 ? "y" : "ies"}` },
-            { icon: "ti-palette",      val: mode },
-            { icon: "ti-layout-rows",  val: side },
+            { icon: "ti-file-text",   val: `${pages} page${pages === 1 ? "" : "s"}` },
+            { icon: "ti-copy",        val: `${copies} cop${copies === 1 ? "y" : "ies"}` },
+            { icon: "ti-palette",     val: mode },
+            { icon: "ti-layout-rows", val: side },
             ...(range  ? [{ icon: "ti-list-numbers", val: `Pages ${range}` }] : []),
             ...(layout ? [{ icon: "ti-layout-grid",  val: layout           }] : []),
           ].map(({ icon, val }) => (
@@ -338,10 +399,51 @@ export default function LoadingPage() {
   const [printerDisconnected, setPrinterDisconnected] = useState(false);
   const [overallMessage, setOverallMessage]           = useState("Preparing your documents…");
 
+  // ── Timeout state ──────────────────────────────────────────────────────────
+  const [printTimedOut, setPrintTimedOut]       = useState(false);
+  const [timeoutCountdown, setTimeoutCountdown] = useState(30);
+  const printTimeoutRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const navigatedRef     = useRef(false);
+
   useAlertSound(printerAlert !== null || printerDisconnected);
 
   const currentFileIdRef   = useRef<string | null>(null);
   const paperEmptyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Start / reset the 30-second print watchdog ────────────────────────────
+  function startPrintTimeout() {
+    clearPrintTimeout();
+    printTimeoutRef.current = setTimeout(() => {
+      // Show the timeout modal and start countdown
+      setPrintTimedOut(true);
+      let remaining = 30;
+      setTimeoutCountdown(remaining);
+      countdownRef.current = setInterval(() => {
+        remaining -= 1;
+        setTimeoutCountdown(remaining);
+        if (remaining <= 0) {
+          clearPrintTimeout();
+          if (!navigatedRef.current) {
+            navigatedRef.current = true;
+            navigate(-1);
+          }
+        }
+      }, 1000);
+    }, PRINT_TIMEOUT_MS);
+  }
+
+  function clearPrintTimeout() {
+    if (printTimeoutRef.current) { clearTimeout(printTimeoutRef.current);  printTimeoutRef.current  = null; }
+    if (countdownRef.current)    { clearInterval(countdownRef.current);     countdownRef.current     = null; }
+  }
+
+  function resetPrintTimeout() {
+    // Called whenever we get a progress event — the print is alive, so reset the watchdog
+    setPrintTimedOut(false);
+    setTimeoutCountdown(30);
+    startPrintTimeout();
+  }
 
   function updateFile(file_id: string, patch: Partial<FileProgress>) {
     setFileProgress((prev) => prev.map((fp) => (fp.file_id === file_id ? { ...fp, ...patch } : fp)));
@@ -377,21 +479,26 @@ export default function LoadingPage() {
       print_total:   sheets,
     });
 
+    // Start the 30-second watchdog as soon as we begin printing
+    startPrintTimeout();
+
     while (true) {
       try {
         await invoke("print_pdf_command", {
-          pdfPath:      localPath,
-          fileName:     file.file_name,
-          pages:        sheets,
-          copies:       file.copies ?? 1,
-          colorMode:    file.printing_mode === "color" ? "Color" : "Monochrome",
-          duplex:       file.printing_side === "double_side",
-          pageRange:    file.page_range?.[0] ?? null,
+          pdfPath:       localPath,
+          fileName:      file.file_name,
+          pages:         file.number_of_pages ?? sheets,  // total doc pages, not computed sheets — Rust uses this for is_full_range check
+          copies:        file.copies ?? 1,
+          colorMode:     file.printing_mode === "color" ? "Color" : "Monochrome",
+          duplex:        file.printing_side === "double_side",
+          pageRange:     joinPageRange(file.page_range),
           pagesPerSheet: file.page_layout === 2 ? "2" : null,
-          sessionId:    job?.session_id,
+          sessionId:     job?.session_id,
         });
 
-        // ── Print succeeded: clear disconnect state and mark done ──────────
+        // ── Print succeeded ────────────────────────────────────────────────
+        clearPrintTimeout();
+        setPrintTimedOut(false);
         setPrinterDisconnected(false);
         updateFile(file.file_id, {
           print_status:  "done",
@@ -403,7 +510,35 @@ export default function LoadingPage() {
       } catch (err: any) {
         const msg = (err?.message || String(err)).toLowerCase();
 
-        // ── Printer disconnected: poll check_printer_ready_command until back ──
+        // ── Timeout / qpdf hang: navigate back immediately ─────────────────
+        if (
+          msg.includes("timeout")       ||
+          msg.includes("timed out")     ||
+          msg.includes("qpdf")          ||
+          msg.includes("operation timed")
+        ) {
+          clearPrintTimeout();
+          updateFile(file.file_id, { print_status: "failed" });
+          currentFileIdRef.current = null;
+          // Show timeout modal which will count down and navigate back
+          setPrintTimedOut(true);
+          let remaining = 30;
+          setTimeoutCountdown(remaining);
+          countdownRef.current = setInterval(() => {
+            remaining -= 1;
+            setTimeoutCountdown(remaining);
+            if (remaining <= 0) {
+              clearPrintTimeout();
+              if (!navigatedRef.current) {
+                navigatedRef.current = true;
+                navigate(-1);
+              }
+            }
+          }, 1000);
+          return;
+        }
+
+        // ── Printer disconnected: poll until back ──────────────────────────
         if (
           msg.includes("not connected")           ||
           msg.includes("disconnected")            ||
@@ -411,25 +546,26 @@ export default function LoadingPage() {
           msg.includes("canon printer not found") ||
           (msg.includes("please contact staff") && msg.includes("connect"))
         ) {
+          clearPrintTimeout(); // pause watchdog while disconnected
           setPrinterDisconnected(true);
 
-          // Poll every 3 s until the printer is ready, then clear the modal
           while (true) {
             await new Promise((r) => setTimeout(r, 3000));
             try {
               await invoke("check_printer_ready_command");
-              // Printer is back — dismiss the modal immediately before retrying
               setPrinterDisconnected(false);
+              startPrintTimeout(); // restart watchdog when printer is back
               break;
             } catch {
-              // Still not ready, keep polling
+              // still not ready
             }
           }
 
           continue; // retry print_pdf_command
         }
 
-        // ── Any other error: surface it to the user ────────────────────────
+        // ── Any other error ────────────────────────────────────────────────
+        clearPrintTimeout();
         setPrinterDisconnected(false);
         updateFile(file.file_id, { print_status: "failed" });
         currentFileIdRef.current = null;
@@ -484,6 +620,8 @@ export default function LoadingPage() {
     listen<{ current: number; total: number; pct: number }>("printer:page_progress", ({ payload }) => {
       const id = currentFileIdRef.current;
       if (!id) return;
+      // Got a progress event → printer is alive → reset the watchdog
+      resetPrintTimeout();
       setFileProgress((prev) =>
         prev.map((fp) =>
           fp.file_id === id
@@ -519,11 +657,33 @@ export default function LoadingPage() {
       }).then((fn) => unlisten.push(fn));
     });
 
-    listen("printer:timeout", () => { setPrinterAlert(null); }).then((fn) => unlisten.push(fn));
+    listen("printer:timeout", () => {
+      // Backend explicitly says timeout → show timeout modal
+      clearPrintTimeout();
+      setPrinterAlert(null);
+      setPrintTimedOut(true);
+      let remaining = 30;
+      setTimeoutCountdown(remaining);
+      countdownRef.current = setInterval(() => {
+        remaining -= 1;
+        setTimeoutCountdown(remaining);
+        if (remaining <= 0) {
+          clearPrintTimeout();
+          if (!navigatedRef.current) {
+            navigatedRef.current = true;
+            navigate(-1);
+          }
+        }
+      }, 1000);
+    }).then((fn) => unlisten.push(fn));
 
-    listen("printer:disconnected", () => { setPrinterDisconnected(true); }).then((fn) => unlisten.push(fn));
+    listen("printer:disconnected", () => {
+      clearPrintTimeout(); // pause watchdog while disconnected
+      setPrinterDisconnected(true);
+    }).then((fn) => unlisten.push(fn));
 
     listen<string>("printer:failed", ({ payload }) => {
+      clearPrintTimeout();
       setPrinterAlert(null);
       setPrinterDisconnected(false);
       setErrorInfo(parseError(payload || "A printer error occurred. Please contact staff."));
@@ -532,7 +692,9 @@ export default function LoadingPage() {
     return () => {
       unlisten.forEach((fn) => fn());
       if (paperEmptyTimerRef.current) clearTimeout(paperEmptyTimerRef.current);
+      clearPrintTimeout();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Progress calculation ───────────────────────────────────────────────────
@@ -592,9 +754,11 @@ export default function LoadingPage() {
 
       <BottomProgressBar phase={phase} progressPct={progressPct} downloadedCount={downloadedCount} printedCount={printedCount} total={total} printingFile={printingFile} />
 
-      {printerDisconnected && <PrinterDisconnectedModal />}
-      {!printerDisconnected && printerAlert && <AlertModal alert={printerAlert} />}
-      {!printerDisconnected && !printerAlert && errorInfo && (
+      {/* Modal priority: timeout > disconnected > alert > error */}
+      {printTimedOut && <TimeoutModal countdown={timeoutCountdown} />}
+      {!printTimedOut && printerDisconnected && <PrinterDisconnectedModal />}
+      {!printTimedOut && !printerDisconnected && printerAlert && <AlertModal alert={printerAlert} />}
+      {!printTimedOut && !printerDisconnected && !printerAlert && errorInfo && (
         <ErrorModal error={errorInfo} phase={phase} onDismiss={() => { setErrorInfo(null); navigate(-1); }} />
       )}
 

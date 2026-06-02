@@ -1,7 +1,7 @@
 use serde_json::json;
 use reqwest::Client;
 
-const API_BASE_URL: &str = "https://kiosk-server-production.duckdns.org";
+const API_BASE_URL: &str = "https://api.lorentatechnologies.com";
 
 pub async fn notify_printer_event(job_id: u32, event: &str, session_id: &str) -> Result<(), String> {
     let url = format!("{}/print/jobs/error", API_BASE_URL);

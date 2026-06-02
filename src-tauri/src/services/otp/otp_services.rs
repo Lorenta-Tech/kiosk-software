@@ -1,7 +1,7 @@
 use crate::modules::job::token_job_response::TokenJobResponse;
 use serde_json::json;
 
-const API_BASE_URL: &str = "https://kiosk-server-production.duckdns.org";
+const API_BASE_URL: &str = "https://api.lorentatechnologies.com";
 
 pub async fn verify_otp(token: i32) -> Result<TokenJobResponse, String> {
     let url = format!("{}/print/jobs/token", API_BASE_URL);

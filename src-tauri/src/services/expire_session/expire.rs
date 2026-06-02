@@ -1,7 +1,7 @@
 use reqwest::Client;
 use std::time::Duration;
 
-const API_BASE_URL: &str = "https://kiosk-server-production.duckdns.org";
+const API_BASE_URL: &str = "https://api.lorentatechnologies.com";
 const INITIAL_DELAY: u64 = 3;
 const MAX_DELAY: u64 = 60;
 

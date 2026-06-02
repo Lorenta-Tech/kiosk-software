@@ -3,7 +3,7 @@ use std::fs;
 use reqwest::Client;
 
 const DOWNLOAD_DIR: &str = "/tmp/kiosk_downloads";
-const API_BASE_URL: &str = "https://kiosk-server-production.duckdns.org";
+const API_BASE_URL: &str = "https://api.lorentatechnologies.com";
 
 pub async fn download_pdf(url: &str, file_name: &str) -> Result<String, String> {
     fs::create_dir_all(DOWNLOAD_DIR)

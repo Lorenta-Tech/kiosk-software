@@ -125,7 +125,7 @@ export default function OfflinePopup() {
             />
           </div>
           <span style={{ fontSize: "13px", color: "#7E49F2", fontWeight: 600 }}>
-            Waiting for connection...
+            Waiting for connection....
           </span>
         </div>
       </div>

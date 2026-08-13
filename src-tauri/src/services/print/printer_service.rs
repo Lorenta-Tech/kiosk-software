@@ -935,14 +935,32 @@ pub fn send_print_job(app: &AppHandle, pdf_path: &str, meta: &PrintJobMeta) -> R
         // FIX 2: skip qpdf entirely when range covers all pages
         // e.g. "1-12" for a 12-page doc = no slicing needed
         // Also avoids the "object has offset 0" qpdf warning on some PDFs
+        // let is_full_range = {
+        //     let parts: Vec<&str> = normalized_range.split(',').collect();
+        //     if parts.len() == 1 {
+        //         if let Some((start, end)) = parts[0].split_once('-') {
+        //             start.trim() == "1"
+        //                 && end.trim().parse::<u32>().ok() == Some(meta.pages)
+        //         } else {
+        //             normalized_range.trim().parse::<u32>().ok() == Some(1) && meta.pages == 1
+        //         }
+        //     } else {
+        //         false
+        //     }
+        // };
+        // FIX 2: skip qpdf entirely when range covers ALL pages of the
+        
+        let actual_page_count = get_pdf_page_count(pdf_path)?;
+
         let is_full_range = {
             let parts: Vec<&str> = normalized_range.split(',').collect();
             if parts.len() == 1 {
                 if let Some((start, end)) = parts[0].split_once('-') {
                     start.trim() == "1"
-                        && end.trim().parse::<u32>().ok() == Some(meta.pages)
+                        && end.trim().parse::<u32>().ok() == Some(actual_page_count)
                 } else {
-                    normalized_range.trim().parse::<u32>().ok() == Some(1) && meta.pages == 1
+                    normalized_range.trim().parse::<u32>().ok() == Some(1)
+                        && actual_page_count == 1
                 }
             } else {
                 false

@@ -36,7 +36,9 @@
         "visible": true,
 
         "focus": true,
-        "devtools": true
+        "devtools": false,
+        "label": "main",
+        "zoomHotkeysEnabled": false
       }
     ],
 

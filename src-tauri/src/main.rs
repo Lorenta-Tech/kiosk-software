@@ -12,40 +12,44 @@ fn main() {
 
     tauri::Builder::default()
 
-        // .setup(|app| {
+        .setup(|app| {
+            let window = app.get_webview_window("main").unwrap();
 
-        //     let window = app.get_webview_window("main").unwrap();
+            window.set_decorations(false).unwrap();
+            window.set_resizable(false).unwrap();
+            window.set_fullscreen(true).unwrap();
+            window.set_always_on_top(true).unwrap();
 
-        //     window.set_decorations(false).unwrap();
+            // Linux-only: strip WebKitGTK's native pinch-zoom gesture handler.
+            // Uses a private GObject API — there's no public Tauri/wry API for
+            // this yet. See: github.com/tauri-apps/wry/issues/544
+            #[cfg(target_os = "linux")]
+            {
+                use glib::translate::ToGlibPtr;
 
-        //     window.set_resizable(false).unwrap();
+                window.with_webview(|webview| {
+                    let wk_view = webview.inner(); // webkit2gtk::WebView
 
-        //     window.set_always_on_top(true).unwrap();
+                    unsafe {
+                        let raw_ptr: *mut webkit2gtk_sys::WebKitWebView = wk_view.to_glib_none().0;
+                        let ptr: *mut gobject_sys::GObject = raw_ptr as *mut gobject_sys::GObject;
 
-        //     window.set_position(
-        //         tauri::PhysicalPosition::new(0, 0)
-        //     ).unwrap();
+                        let key = std::ffi::CString::new("wk-view-zoom-gesture").unwrap();
+                        let data = gobject_sys::g_object_get_data(ptr, key.as_ptr());
 
-        //     window.set_size(
-        //         tauri::PhysicalSize::new(1080, 1920)
-        //     ).unwrap();
+                        if !data.is_null() {
+                            gobject_sys::g_signal_handlers_destroy(data as *mut _);
+                            println!("✅ WebKitGTK pinch-zoom gesture handler removed");
+                        } else {
+                            println!("⚠️  wk-view-zoom-gesture key not found — internal API may have changed");
+                        }
+                    }
+                }).unwrap();
+            }
 
-        //     Ok(())
-        // })
-.setup(|app| {
+            Ok(())
+        })
 
-    let window = app.get_webview_window("main").unwrap();
-
-    window.set_decorations(false).unwrap();
-
-    window.set_resizable(false).unwrap();
-
-    window.set_fullscreen(true).unwrap();
-
-    window.set_always_on_top(true).unwrap();
-
-    Ok(())
-})
         .on_window_event(|window, event| {
 
             match event {

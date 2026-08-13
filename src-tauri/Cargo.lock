@@ -2025,6 +2025,8 @@ name = "kiosk-engg"
 version = "0.1.0"
 dependencies = [
  "dotenvy",
+ "glib",
+ "gobject-sys",
  "gtk",
  "printers",
  "reqwest 0.12.28",
@@ -2033,6 +2035,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "webkit2gtk-sys",
 ]
 
 [[package]]
